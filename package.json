@@ -1,0 +1,35 @@
+{
+  "name": "cursor_riper_memory_bank",
+  "version": "1.0.0",
+  "description": "Данное руководство описывает принципы эффективной работы с искусственным интеллектом, который функционирует согласно двум интегрированным системам:\r 1. **Протокол RIPER** — определяет режимы работы и дисциплину взаимодействия\r 2. **Банк Памяти** — обеспечивает сохранение знаний между сессиями",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "node dist/memory-bank.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JackOman69/cursor_riper_memory_bank.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JackOman69/cursor_riper_memory_bank/issues"
+  },
+  "homepage": "https://github.com/JackOman69/cursor_riper_memory_bank#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.8.0",
+    "fs-extra": "^11.3.0",
+    "graphology": "^0.26.0",
+    "graphology-types": "^0.24.8",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.13.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}

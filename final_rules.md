@@ -18,6 +18,13 @@ flowchart TD
     TC --> AC
     
     AC --> P[progress.md]
+    
+    G[graph.json] --- PB
+    G --- PC
+    G --- SP
+    G --- TC
+    G --- AC
+    G --- P
 ```
 
 ### Core Files (Required)
@@ -27,6 +34,7 @@ flowchart TD
 4. `systemPatterns.md` - Documents system architecture and design patterns
 5. `techContext.md` - Lists technologies used and dependencies
 6. `progress.md` - Tracks what works and what's left to build
+7. `graph.json` - Stores the knowledge graph structure of the project, including nodes and relationships
 
 ## THE RIPER-5 MODES
 
@@ -212,33 +220,232 @@ The .cursorrules file captures important patterns, preferences, and project inte
 
 The Memory Bank MCP server provides these tools:
 
-1. **mcp_memory_bank_list_projects**
+### Basic Project Management Tools
+
+1. **list_projects**
    - Lists all projects in the memory bank
    - Permitted in: RESEARCH, PLAN modes
 
-2. **mcp_memory_bank_create_project**
-   - Creates a new project with standard file structure
+2. **create_project**
+   - Creates a new project with standard file structure and an empty graph
    - Parameters: `project_name`
    - Permitted in: PLAN, EXECUTE modes (only if in approved plan)
 
-3. **mcp_memory_bank_list_project_files**
+3. **list_project_files**
    - Lists all files in a specific project
    - Parameters: `project_name`
    - Permitted in: RESEARCH, PLAN modes
 
-4. **mcp_memory_bank_get_file_content**
+4. **get_file_content**
    - Retrieves content of a specific file
    - Parameters: `project_name`, `file_path`
    - Permitted in: RESEARCH, PLAN, REVIEW modes
 
-5. **mcp_memory_bank_update_file_content**
+5. **update_file_content**
    - Updates or creates a file with new content
    - Parameters: `project_name`, `file_path`, `content`
    - Permitted in: EXECUTE mode (only if in approved plan)
 
-6. **mcp_memory_bank_init_memory_bank**
+6. **init_memory_bank**
    - Initializes the memory bank structure if it doesn't exist
    - Permitted in: PLAN, EXECUTE modes (only if in approved plan)
+
+### Knowledge Graph Tools
+
+7. **mcp_memory_bank_add_node**
+   - Adds a node to the project's knowledge graph
+   - Parameters: `project_name`, `id`, `type`, `label`, `data` (optional)
+   - Permitted in: EXECUTE mode (only if in approved plan)
+
+8. **mcp_memory_bank_update_node**
+   - Updates an existing node in the knowledge graph
+   - Parameters: `project_name`, `id`, `newLabel` (optional), `data_to_merge` (optional)
+   - Permitted in: EXECUTE mode (only if in approved plan)
+
+9. **mcp_memory_bank_add_edge**
+   - Adds a directed edge (relationship) between two nodes
+   - Parameters: `project_name`, `sourceId`, `targetId`, `relationshipType`
+   - Permitted in: EXECUTE mode (only if in approved plan)
+
+10. **mcp_memory_bank_delete_node**
+    - Deletes a node and its connected edges from the graph
+    - Parameters: `project_name`, `id`
+    - Permitted in: EXECUTE mode (only if in approved plan)
+
+11. **mcp_memory_bank_delete_edge**
+    - Deletes a specific directed edge between two nodes
+    - Parameters: `project_name`, `sourceId`, `targetId`, `relationshipType`
+    - Permitted in: EXECUTE mode (only if in approved plan)
+
+12. **mcp_memory_bank_get_node**
+    - Retrieves details of a specific node
+    - Parameters: `project_name`, `id`
+    - Permitted in: RESEARCH, PLAN modes
+
+13. **mcp_memory_bank_get_all_nodes**
+    - Retrieves all nodes in the graph
+    - Parameters: `project_name`
+    - Permitted in: RESEARCH, PLAN modes
+
+14. **mcp_memory_bank_get_all_edges**
+    - Retrieves all edges in the graph
+    - Parameters: `project_name`
+    - Permitted in: RESEARCH, PLAN modes
+
+15. **mcp_memory_bank_query_graph**
+    - Queries the knowledge graph based on filters or neighbors
+    - Parameters: `project_name`, `query` (query object with filters or neighbor parameters)
+    - Permitted in: RESEARCH, PLAN modes
+
+## Knowledge Graph Structure
+
+The Memory Bank uses a directed graph structure to represent knowledge about the project. This graph is stored in the `graph.json` file in each project directory and provides a powerful way to model relationships between different entities in the project.
+
+### Node Types and Attributes
+
+Each node in the graph represents an entity and has the following attributes:
+
+1. **id** (required): Unique identifier for the node
+2. **type** (required): Category of the node (e.g., Function, Class, File, Concept, Requirement)
+3. **label** (required): Human-readable name for the node
+4. **data** (optional): Structured data specific to the node type
+
+#### Common Node Types
+
+- **File**: Represents a file in the project
+  - Data attributes: path, lastModified, fileType
+- **Function**: Represents a function or method
+  - Data attributes: signature, returnType, parameters
+- **Class**: Represents a class or interface
+  - Data attributes: properties, methods, inheritance
+- **Concept**: Represents an abstract concept or pattern
+  - Data attributes: description, examples, references
+- **Requirement**: Represents a project requirement
+  - Data attributes: priority, status, description
+
+### Edge Types (Relationships)
+
+Edges represent relationships between nodes and have the following attributes:
+
+1. **relationshipType** (required): Type of relationship between nodes
+
+#### Common Relationship Types
+
+- **CONTAINS**: Parent-child relationship (e.g., File CONTAINS Function)
+- **CALLS**: Function calls another function
+- **IMPLEMENTS**: Class implements an interface or concept
+- **DEPENDS_ON**: Entity depends on another entity
+- **RELATES_TO**: General relationship between entities
+- **SATISFIES**: Implementation satisfies a requirement
+
+### Graph Structure Example
+
+```json
+{
+  "nodes": [
+    {
+      "id": "file1",
+      "type": "File",
+      "label": "main.js",
+      "data": { "path": "/src/main.js", "fileType": "JavaScript" }
+    },
+    {
+      "id": "func1",
+      "type": "Function",
+      "label": "processData",
+      "data": { "signature": "processData(input)", "returnType": "Object" }
+    },
+    {
+      "id": "req1",
+      "type": "Requirement",
+      "label": "Data Processing",
+      "data": { "priority": "High", "status": "Implemented" }
+    }
+  ],
+  "edges": [
+    {
+      "source": "file1",
+      "target": "func1",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "source": "func1",
+      "target": "req1",
+      "relationshipType": "SATISFIES"
+    }
+  ]
+}
+```
+
+### Working with the Knowledge Graph
+
+#### Adding Nodes and Relationships
+
+To build a knowledge graph for your project:
+
+1. First add nodes for key entities:
+   ```
+   mcp_memory_bank_add_node project_name="MyProject" id="file1" type="File" label="main.js" data={"path":"/src/main.js"}
+   mcp_memory_bank_add_node project_name="MyProject" id="func1" type="Function" label="processData" data={"signature":"processData(input)"}
+   ```
+
+2. Then connect nodes with relationships:
+   ```
+   mcp_memory_bank_add_edge project_name="MyProject" sourceId="file1" targetId="func1" relationshipType="CONTAINS"
+   ```
+
+#### Querying the Graph
+
+The graph can be queried in several ways:
+
+1. **By Node Type**:
+   ```json
+   {
+     "filters": [
+       { "attribute": "type", "value": "Function" }
+     ]
+   }
+   ```
+
+2. **By Node Label**:
+   ```json
+   {
+     "filters": [
+       { "attribute": "label", "value": "processData" }
+     ]
+   }
+   ```
+
+3. **Finding Neighbors**:
+   ```json
+   {
+     "neighborsOf": "file1",
+     "direction": "out",
+     "relationshipType": "CONTAINS"
+   }
+   ```
+
+4. **Combined Queries**:
+   ```json
+   {
+     "neighborsOf": "file1",
+     "direction": "out",
+     "relationshipType": "CONTAINS",
+     "filters": [
+       { "attribute": "type", "value": "Function" }
+     ]
+   }
+   ```
+
+### Best Practices for Knowledge Graph Management
+
+1. **Consistent Naming**: Use consistent naming conventions for node IDs and labels
+2. **Type Hierarchy**: Establish a clear hierarchy of node types
+3. **Relationship Semantics**: Define clear semantics for relationship types
+4. **Incremental Building**: Build the graph incrementally as the project evolves
+5. **Regular Queries**: Use graph queries to gain insights about the project structure
+6. **Documentation Integration**: Link graph nodes to relevant documentation
+7. **Requirement Tracing**: Use the graph to trace requirements to implementations
 
 ## Context Tracking Protocol
 
