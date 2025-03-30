@@ -841,6 +841,118 @@ ${resultString}` }] };
         return { content: [{ type: "text", text: `Error querying graph: ${error instanceof Error ? error.message : String(error)}` }] };
     }
 });
+// Batch Graph Operations
+// Define Zod schemas for batch operations
+const BatchNodeSchema = zod_1.z.object({
+    id: zod_1.z.string().min(1).describe("Unique ID for the node"),
+    type: zod_1.z.string().min(1).describe("Type of the node (e.g., Function, File, Concept)"),
+    label: zod_1.z.string().min(1).describe("Human-readable label for the node"),
+    data: zod_1.z.record(zod_1.z.any()).optional().describe("Optional structured data for the node"),
+});
+const BatchEdgeSchema = zod_1.z.object({
+    sourceId: zod_1.z.string().min(1).describe("ID of the source node"),
+    targetId: zod_1.z.string().min(1).describe("ID of the target node"),
+    relationshipType: zod_1.z.string().min(1).describe("Type of the relationship (e.g., CALLS, IMPLEMENTS)"),
+});
+// Batch Operations Tool
+server.tool("mcp_memory_bank_batch_operations", "Performs batch operations on nodes and edges in a single transaction.", {
+    project_name: zod_1.z.string().min(1).describe("Name of the project"),
+    nodes: zod_1.z.array(BatchNodeSchema).optional().describe("Array of nodes to add or update"),
+    edges: zod_1.z.array(BatchEdgeSchema).optional().describe("Array of edges to add"),
+    operation_type: zod_1.z.enum(["add"]).default("add").describe("Type of batch operation (currently only 'add' is supported)"),
+}, async ({ project_name, nodes, edges, operation_type }) => {
+    try {
+        // Validate inputs
+        if ((!nodes || nodes.length === 0) && (!edges || edges.length === 0)) {
+            return {
+                content: [{
+                        type: "text",
+                        text: "Error: At least one node or edge must be specified for batch operation."
+                    }]
+            };
+        }
+        // Load the graph only once for the entire batch operation
+        const graph = loadGraph(project_name);
+        // Track results for detailed reporting
+        const results = {
+            nodesAdded: 0,
+            nodesSkipped: 0,
+            edgesAdded: 0,
+            edgesSkipped: 0,
+            errors: []
+        };
+        // Process all nodes first
+        if (nodes && nodes.length > 0) {
+            for (const node of nodes) {
+                try {
+                    if (graph.hasNode(node.id)) {
+                        // Skip existing nodes to prevent overwriting
+                        results.nodesSkipped++;
+                        results.errors.push(`Node ${node.id} already exists and was skipped.`);
+                    }
+                    else {
+                        graph.addNode(node.id, {
+                            id: node.id,
+                            type: node.type,
+                            label: node.label,
+                            data: node.data || {}
+                        });
+                        results.nodesAdded++;
+                    }
+                }
+                catch (nodeError) {
+                    results.errors.push(`Error processing node ${node.id}: ${nodeError instanceof Error ? nodeError.message : String(nodeError)}`);
+                }
+            }
+        }
+        // Process all edges after nodes are added
+        if (edges && edges.length > 0) {
+            for (const edge of edges) {
+                try {
+                    // Verify that source and target nodes exist
+                    if (!graph.hasNode(edge.sourceId)) {
+                        results.edgesSkipped++;
+                        results.errors.push(`Edge skipped: Source node ${edge.sourceId} not found.`);
+                        continue;
+                    }
+                    if (!graph.hasNode(edge.targetId)) {
+                        results.edgesSkipped++;
+                        results.errors.push(`Edge skipped: Target node ${edge.targetId} not found.`);
+                        continue;
+                    }
+                    // Add the edge
+                    graph.addDirectedEdge(edge.sourceId, edge.targetId, { relationshipType: edge.relationshipType });
+                    results.edgesAdded++;
+                }
+                catch (edgeError) {
+                    results.errors.push(`Error processing edge from ${edge.sourceId} to ${edge.targetId}: ${edgeError instanceof Error ? edgeError.message : String(edgeError)}`);
+                }
+            }
+        }
+        // Save the graph only once after all operations
+        saveGraph(project_name, graph);
+        // Build response message
+        let resultMessage = `Batch operation completed for project ${project_name}:\n`;
+        resultMessage += `- Nodes added: ${results.nodesAdded}\n`;
+        resultMessage += `- Nodes skipped: ${results.nodesSkipped}\n`;
+        resultMessage += `- Edges added: ${results.edgesAdded}\n`;
+        resultMessage += `- Edges skipped: ${results.edgesSkipped}\n`;
+        if (results.errors.length > 0) {
+            resultMessage += `\nWarnings/Errors (${results.errors.length}):\n`;
+            resultMessage += results.errors.map(err => `- ${err}`).join('\n');
+        }
+        return { content: [{ type: "text", text: resultMessage }] };
+    }
+    catch (error) {
+        console.error("Error in batch operation:", error);
+        return {
+            content: [{
+                    type: "text",
+                    text: `Error in batch operation: ${error instanceof Error ? error.message : String(error)}`
+                }]
+        };
+    }
+});
 // --- End Graph Tools Implementation and Registration ---
 // Запускаем сервер с использованием stdio транспорта
 async function main() {

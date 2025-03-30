@@ -349,6 +349,12 @@ The Memory Bank MCP server provides these tools:
     - Parameters: `project_name`, `query` (query object with filters or neighbor parameters)
     - Permitted in: RESEARCH, PLAN modes
 
+16. **mcp_memory_bank_batch_operations**
+    - Performs batch operations on nodes and edges in a single transaction
+    - Parameters: `project_name`, `nodes` (array of nodes), `edges` (array of edges), `operation_type` (currently only "add" is supported)
+    - Permitted in: EXECUTE mode (only if in approved plan)
+    - Efficiency: More efficient than individual node/edge operations when creating complex structures
+
 ## Knowledge Graph Structure
 
 The Memory Bank uses a directed graph structure to represent knowledge about the project. This graph is stored in the `graph.json` file in each project directory and provides a powerful way to model relationships between different entities in the project.
@@ -446,6 +452,16 @@ To build a knowledge graph for your project:
    mcp_memory_bank_add_edge project_name="MyProject" sourceId="file1" targetId="func1" relationshipType="CONTAINS"
    ```
 
+3. For complex structures, use batch operations (more efficient):
+   ```
+   mcp_memory_bank_batch_operations project_name="MyProject" nodes=[
+     {"id": "component1", "type": "Component", "label": "Component 1", "data": {"description": "Main component"}},
+     {"id": "subcomponent1", "type": "Component", "label": "Subcomponent 1", "data": {"description": "First subcomponent"}}
+   ] edges=[
+     {"sourceId": "component1", "targetId": "subcomponent1", "relationshipType": "CONTAINS"}
+   ]
+   ```
+
 #### Querying the Graph
 
 The graph can be queried in several ways:
@@ -495,9 +511,10 @@ The graph can be queried in several ways:
 2. **Type Hierarchy**: Establish a clear hierarchy of node types
 3. **Relationship Semantics**: Define clear semantics for relationship types
 4. **Incremental Building**: Build the graph incrementally as the project evolves
-5. **Regular Queries**: Use graph queries to gain insights about the project structure
-6. **Documentation Integration**: Link graph nodes to relevant documentation
-7. **Requirement Tracing**: Use the graph to trace requirements to implementations
+5. **Batch Operations**: Use batch operations when adding multiple related nodes and edges to improve efficiency
+6. **Regular Queries**: Use graph queries to gain insights about the project structure
+7. **Documentation Integration**: Link graph nodes to relevant documentation
+8. **Requirement Tracing**: Use the graph to trace requirements to implementations
 
 ## Context Tracking Protocol
 

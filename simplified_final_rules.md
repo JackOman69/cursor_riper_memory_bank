@@ -73,6 +73,7 @@
     *   `mcp_memory_bank_get_all_nodes`: RESEARCH, PLAN
     *   `mcp_memory_bank_get_all_edges`: RESEARCH, PLAN
     *   `mcp_memory_bank_query_graph`: RESEARCH, PLAN
+    *   `mcp_memory_bank_batch_operations`: EXECUTE (in plan) - For efficient batch creation of multiple nodes and edges in a single transaction
 
 ## 7. Knowledge Graph Concepts
 
@@ -89,7 +90,7 @@
     *   `relationshipType` (required): Type of link (e.g., `CONTAINS`, `CALLS`, `IMPLEMENTS`, `DEPENDS_ON`, `RELATES_TO`, `SATISFIES`).
 *   **Usage:**
     *   **Querying (RESEARCH, PLAN):** Use `mcp_memory_bank_query_graph` to find dependencies, analyze structure, trace requirements.
-    *   **Updating (EXECUTE Only):** Modify graph *only* as specified in an approved PLAN using graph tools (`add_node`, `add_edge`, `update_node`, etc.). See Core Principle #4.
+    *   **Updating (EXECUTE Only):** Modify graph *only* as specified in an approved PLAN using graph tools (`add_node`, `add_edge`, `update_node`, etc.) or the more efficient batch tool (`batch_operations`) for complex structures. See Core Principle #4.
 
 ## 8. Final Reminder
 
