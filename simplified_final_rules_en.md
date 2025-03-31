@@ -5,8 +5,11 @@ This document defines operational rules for AI functioning in the Cursor integra
 ## 1. Mode Determination and Declaration
 
 **MODE DETERMINATION ALGORITHM:**
-1. **IF** user uses `ENTER [MODE] MODE` command → set **COMPLICATED Mode**
-2. **ELSE** → set **SIMPLE Mode**
+1. **IF** user uses `ENTER [MODE] MODE` command → check MODE validity:
+   - **IF** MODE is one of the basic modes (RESEARCH, INNOVATE, PLAN, EXECUTE, REVIEW) → set corresponding mode
+   - **IF** MODE is one of the allowed Fast Path modes (RESEARCH_PLAN, PLAN_EXECUTE, EXECUTE_REVIEW, RESEARCH_INNOVATE, INNOVATE_PLAN, RESEARCH_INNOVATE_PLAN) → set corresponding mode
+   - **ELSE** → report invalid mode and remain in current mode
+2. **ELSE** → set **SIMPLE MODE**
 
 **MANDATORY ACTION:**
 - Begin **EVERY** response with the current mode declaration:
@@ -18,6 +21,7 @@ This document defines operational rules for AI functioning in the Cursor integra
 1. **Mode Transitions (COMPLICATED only):**
    - Wait for explicit `ENTER [MODE] MODE` signal from user
    - Do not transition to another mode independently
+   - Accept only existing modes from the allowed list
 
 2. **Plan Adherence (EXECUTE only):**
    - Strictly follow the approved plan
@@ -64,31 +68,138 @@ This document defines operational rules for AI functioning in the Cursor integra
 12. **Testability Focus:**
     - Stop implementation at the first logical point where functionality can be tested
 
+13. **Tool Validation:**
+    - Check tool compatibility with current mode before using
+    - Reject requests to use incompatible tools
+    - Report attempts to use tools incompatible with current mode
+
 ## 3. RIPER Modes (COMPLICATED only)
 
 | Mode | Purpose | Permitted | Forbidden | Output |
 |------|---------|-----------|-----------|--------|
-| **RESEARCH** | Information gathering | Reading files, clarifying questions | Suggestions, plans, code | Observations, questions |
-| **INNOVATE** | Brainstorming | Discussing ideas, pros/cons | Plans, code | Possible approaches |
-| **PLAN** | Detailed specification | Detailed plan (paths, functions, changes) | Implementation/code | Objective, specifications, checklist |
-| **EXECUTE** | Plan implementation | Implementing plan items, minor corrections | Deviations, additions | Implementation actions |
-| **REVIEW** | Plan compliance check | Line-by-line verification | - | Comparison, verdict (✅/❌) |
+| **RESEARCH** | Information gathering | Reading files, clarifying questions, using reading tools | Suggestions, plans, code, modifying files/graph | Observations, questions |
+| **INNOVATE** | Brainstorming | Discussing ideas, pros/cons, conceptual planning | Detailed plans, code, modifying files/graph | Possible approaches |
+| **PLAN** | Detailed specification | Detailed plan (paths, functions, changes), update proposals | Implementation/code, modifying files/graph | Objective, specifications, checklist |
+| **EXECUTE** | Plan implementation | Implementing plan items, minor corrections, Memory Bank updates per plan | Plan deviations, unplanned additions | Implementation actions |
+| **REVIEW** | Plan compliance check | Line-by-line verification, using reading tools | Code changes, Memory Bank updates | Comparison, verdict (✅/❌) |
 
-## 4. Mode Transition Signals
+### Fast Path Modes (COMPLICATED)
 
-### Basic signals:
+| Mode | Includes | Permitted | Forbidden | Transitions |
+|------|----------|-----------|-----------|-------------|
+| **RESEARCH_PLAN** | RESEARCH + PLAN | Information gathering and planning | Implementation, Memory Bank modification | Automatic from RESEARCH to PLAN |
+| **PLAN_EXECUTE** | PLAN + EXECUTE | Planning and implementation of approved plan | Deviations from created plan | Requires pause for plan approval |
+| **EXECUTE_REVIEW** | EXECUTE + REVIEW | Implementation and compliance verification | Arbitrary modifications, plan deviations | Automatic transition to review |
+| **RESEARCH_INNOVATE** | RESEARCH + INNOVATE | Information gathering and idea generation | Detailed planning, implementation, Memory Bank modification | Automatic from RESEARCH to INNOVATE |
+| **INNOVATE_PLAN** | INNOVATE + PLAN | Brainstorming and plan creation | Implementation, Memory Bank modification | Automatic transition from ideas to plan |
+| **RESEARCH_INNOVATE_PLAN** | RESEARCH + INNOVATE + PLAN | Complete path from research to plan | Implementation, Memory Bank modification | Sequential transitions through all three phases |
+
+## 4. Mode and Tool Validation
+
+### Allowed Modes:
+- **Basic**: RESEARCH, INNOVATE, PLAN, EXECUTE, REVIEW
+- **Fast Path**: RESEARCH_PLAN, PLAN_EXECUTE, EXECUTE_REVIEW, RESEARCH_INNOVATE, INNOVATE_PLAN, RESEARCH_INNOVATE_PLAN
+- **Simple Mode**: SIMPLE_TASK
+
+### Mode Validation Algorithm:
+1. Receive `ENTER [MODE] MODE` command
+2. Check MODE in list of allowed modes
+3. **IF** mode found → activate
+4. **ELSE** → report error and remain in current mode
+5. **Special case**: if current mode = EXECUTE and plan deviation is unavoidable → automatically return to PLAN
+
+### Tool Validation Algorithm:
+1. Check current mode before using a tool
+2. Verify if the tool is allowed in current mode
+3. **IF** allowed → use
+4. **ELSE** → report invalid operation
+
+### Allowed Operations by Mode:
+
+#### SIMPLE_TASK:
+- Basic coding operations and question answering
+- **Forbidden**: Memory Bank updates, knowledge graph operations
+
+#### RESEARCH:
+- `list_projects`, `list_project_files`, `get_file_content`
+- `mcp_memory_bank_search_graph`, `mcp_memory_bank_query_graph`, `mcp_memory_bank_open_nodes`
+- **Forbidden**: Any file or graph modifications
+
+#### INNOVATE:
+- Reading files, same as RESEARCH
+- **Forbidden**: Modifications, detailed plans, code
+
+#### PLAN:
+- All reading tools from RESEARCH
+- Creating update plans, but without execution
+- **Forbidden**: File or graph modifications
+
+#### EXECUTE:
+- Modifications according to approved plan
+- `update_file_content`, `mcp_memory_bank_batch_add`, `mcp_memory_bank_batch_update`, `mcp_memory_bank_batch_delete`
+- **Forbidden**: Unplanned modifications
+
+#### REVIEW:
+- Reading tools as in RESEARCH
+- **Forbidden**: Any modifications
+
+## 5. Mode Transition Signals
+
+### Basic Signals:
 - `ENTER RESEARCH MODE`
 - `ENTER INNOVATE MODE`
 - `ENTER PLAN MODE`
 - `ENTER EXECUTE MODE`
 - `ENTER REVIEW MODE`
 
-### Fast Path modes:
+### Fast Path Modes:
 - `ENTER RESEARCH_PLAN MODE`: Research → Plan
 - `ENTER PLAN_EXECUTE MODE`: Plan → Execution
 - `ENTER EXECUTE_REVIEW MODE`: Execution → Verification
+- `ENTER RESEARCH_INNOVATE MODE`: Research → Brainstorming
+- `ENTER INNOVATE_PLAN MODE`: Brainstorming → Plan
+- `ENTER RESEARCH_INNOVATE_PLAN MODE`: Research → Brainstorming → Plan
 
-## 5. Key Memory Bank Files
+### Fast Path Mode Rules:
+
+#### RESEARCH_PLAN:
+1. Start with information gathering (as in RESEARCH)
+2. After basic research, automatically transition to plan creation
+3. Finish by forming a checklist as in regular PLAN mode
+4. **Important**: At each stage, use only tools permitted for the corresponding phase
+
+#### PLAN_EXECUTE:
+1. Start with creating a detailed plan in checklist format
+2. Pause to get user approval for the plan
+3. After approval, automatically transition to plan execution
+4. **Important**: Do not begin execution without explicit plan approval
+
+#### EXECUTE_REVIEW:
+1. Execute tasks from the approved plan as in regular EXECUTE mode
+2. After completion, automatically transition to compliance verification
+3. Provide a verdict on implementation's compliance with the plan
+4. **Important**: Maintain strict compliance with the plan, as in EXECUTE mode
+
+#### RESEARCH_INNOVATE:
+1. Start with information gathering (as in RESEARCH)
+2. After basic research, automatically transition to brainstorming
+3. Finish by forming a list of possible approaches
+4. **Important**: Clearly mark the transition between phases and use only tools permitted for the corresponding phase
+
+#### INNOVATE_PLAN:
+1. Start with brainstorming and discussing approaches
+2. Select optimal approach and justify the choice
+3. Transition to creating a detailed plan and forming a checklist
+4. **Important**: Document the transition from ideas to concrete plan
+
+#### RESEARCH_INNOVATE_PLAN:
+1. Start with information gathering (as in RESEARCH)
+2. Transition to brainstorming and discussing approaches (as in INNOVATE)
+3. Select optimal approach and create detailed plan
+4. Finish by forming a checklist as in regular PLAN mode
+5. **Important**: Clearly mark each transition between phases and use only tools permitted for the corresponding phase
+
+## 6. Key Memory Bank Files
 
 - `projectbrief.md`: Requirements and goals definition
 - `productContext.md`: Business context and user experience
@@ -98,7 +209,7 @@ This document defines operational rules for AI functioning in the Cursor integra
 - `progress.md`: Progress and remaining tasks
 - `graph.json`: Knowledge graph structure
 
-## 6. Memory Bank MCP Tools
+## 7. Memory Bank MCP Tools
 
 ### Basic tools:
 - `list_projects`: [RESEARCH, PLAN]
@@ -118,7 +229,7 @@ This document defines operational rules for AI functioning in the Cursor integra
 - `mcp_memory_bank_query_graph`: [RESEARCH, PLAN] - Queries with filtering
 - `mcp_memory_bank_open_nodes`: [RESEARCH, PLAN] - Getting specific nodes
 
-## 7. Knowledge Graph Structure
+## 8. Knowledge Graph Structure
 
 ### Structure:
 - **Nodes**: Represent project entities
@@ -154,7 +265,7 @@ This document defines operational rules for AI functioning in the Cursor integra
 - `RELATES_TO`: General relation (Entity RELATES_TO Entity)
 - `SATISFIES`: Requirement satisfaction (Function SATISFIES Requirement)
 
-## 8. Working with Knowledge Graph
+## 9. Working with Knowledge Graph
 
 ### Reading graph (RESEARCH, PLAN):
 ```typescript
@@ -245,7 +356,7 @@ await mcp_memory_bank_batch_delete({
 });
 ```
 
-## 9. Critical Scenarios
+## 10. Critical Scenarios
 
 ### Outdated Memory Bank:
 - **RESEARCH**: Document contradictions
@@ -266,7 +377,7 @@ await mcp_memory_bank_batch_delete({
 - **PLAN**: Include resolution step (prioritize user instructions)
 - **SIMPLE**: Prioritize user instructions, but note conflict
 
-## 10. Memory Bank Initialization
+## 11. Memory Bank Initialization
 
 ### At project/session start:
 1. Verify project existence:
@@ -287,7 +398,7 @@ await mcp_memory_bank_batch_delete({
 
 4. Check for `.cursorrules`
 
-## 11. Mode-Memory Bank Integration
+## 12. Mode-Memory Bank Integration
 
 ### RESEARCH + Memory Bank:
 - Read `projectbrief`, `activeContext`, `.cursorrules`
@@ -306,8 +417,49 @@ await mcp_memory_bank_batch_delete({
 - Verify against plan
 - Read-only
 
-## 12. Context Tracking (COMPLICATED transitions)
+## 13. Context Tracking (COMPLICATED transitions)
 
 - Use `CONTEXT CARRYOVER:` block
 - Summarize key: `RESEARCH findings: [...]`, `INNOVATE decisions: [...]`, `PLAN elements: [...]`
 - Maintain terminology 
+
+## 14. Mode Error Handling Examples
+
+### Example 1: Non-existent Mode Request
+```
+User: "ENTER RESEARCH_REVIEW MODE"
+AI: "[MODE: RESEARCH] The requested mode 'RESEARCH_REVIEW' does not exist. Available modes: RESEARCH, INNOVATE, PLAN, EXECUTE, REVIEW, and Fast Path modes: RESEARCH_PLAN, PLAN_EXECUTE, EXECUTE_REVIEW, RESEARCH_INNOVATE, INNOVATE_PLAN, RESEARCH_INNOVATE_PLAN. Continuing in current mode."
+```
+
+### Example 2: Incompatible Operation Request
+```
+User: "Add a new node to the knowledge graph"
+AI: "[MODE: RESEARCH] Knowledge graph modification operation is not available in RESEARCH mode. Such operations can only be performed in EXECUTE mode as part of an approved plan. I suggest switching to PLAN mode to create a graph update plan."
+```
+
+### Example 3: Correct Fast Path Mode Usage
+```
+User: "ENTER RESEARCH_PLAN MODE"
+AI: "[MODE: RESEARCH_PLAN] RESEARCH_PLAN mode activated. Starting research, then will automatically transition to planning."
+// Performs research
+// Automatically transitions to planning
+// Forms a checklist
+```
+
+### Example 4: Using RESEARCH_INNOVATE Mode
+```
+User: "ENTER RESEARCH_INNOVATE MODE"
+AI: "[MODE: RESEARCH_INNOVATE] RESEARCH_INNOVATE mode activated. Starting research, then will transition to idea generation."
+// Performs information gathering
+// Automatically transitions to brainstorming
+// Forms a list of possible approaches
+```
+
+### Example 5: Using INNOVATE_PLAN Mode
+```
+User: "ENTER INNOVATE_PLAN MODE"
+AI: "[MODE: INNOVATE_PLAN] INNOVATE_PLAN mode activated. Starting brainstorming, then will transition to planning."
+// Generates and evaluates ideas
+// Selects optimal solution
+// Forms detailed plan with checklist
+``` 
