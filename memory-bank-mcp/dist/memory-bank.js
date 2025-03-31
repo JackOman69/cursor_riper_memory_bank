@@ -55,7 +55,7 @@ catch (error) {
 // Создаем экземпляр MCP сервера
 const server = new mcp_js_1.McpServer({
     name: "Memory Bank",
-    version: "1.0.0",
+    version: "2.2.0",
 });
 // --- End Type Definitions ---
 // Регистрируем инструмент для получения списка проектов
@@ -493,6 +493,44 @@ server.tool("init_memory_bank", "Initializes the memory bank directory structure
     }
 });
 // --- Graph Helper Functions ---
+// Функция для создания метаданных с текущей датой и начальной версией
+const createInitialMetadata = () => {
+    const now = new Date().toISOString();
+    return {
+        createdAt: now,
+        lastModified: now,
+        version: 1
+    };
+};
+// Функция для обновления метаданных при изменении узла или ребра
+const updateMetadata = (existing) => {
+    return {
+        createdAt: existing.createdAt,
+        lastModified: new Date().toISOString(),
+        version: existing.version + 1
+    };
+};
+// Сортировка узлов по алфавиту (по ID)
+const sortNodesByAlphabet = (nodes) => {
+    return [...nodes].sort((a, b) => {
+        return a.key.localeCompare(b.key);
+    });
+};
+// Сортировка рёбер по исходному узлу, целевому узлу, затем по типу отношения
+const sortEdgesByAlphabet = (edges) => {
+    return [...edges].sort((a, b) => {
+        // Сначала сортируем по исходному узлу
+        const sourceCompare = a.source.localeCompare(b.source);
+        if (sourceCompare !== 0)
+            return sourceCompare;
+        // При одинаковых исходных узлах сортируем по целевому узлу
+        const targetCompare = a.target.localeCompare(b.target);
+        if (targetCompare !== 0)
+            return targetCompare;
+        // При одинаковых исходных и целевых узлах сортируем по типу отношения
+        return a.attributes.relationshipType.localeCompare(b.attributes.relationshipType);
+    });
+};
 // Function to get the path to the graph.json file for a project
 const getGraphPath = (projectName) => {
     // Sanitize project name again for safety when constructing path
@@ -524,265 +562,578 @@ const saveGraph = (projectName, graph) => {
     const graphPath = getGraphPath(projectName);
     try {
         fs_extra_1.default.ensureDirSync(path.dirname(graphPath));
-        fs_extra_1.default.writeJsonSync(graphPath, graph.export(), { spaces: 2 });
+        // Экспортируем граф в объект
+        const exportedGraph = graph.export();
+        // Сортируем узлы алфавитно по ключу
+        exportedGraph.nodes = sortNodesByAlphabet(exportedGraph.nodes);
+        // Сортируем рёбра по исходному узлу, целевому узлу и типу отношения
+        exportedGraph.edges = sortEdgesByAlphabet(exportedGraph.edges);
+        // Добавляем метаданные о сохранении
+        exportedGraph.metadata = {
+            lastSaved: new Date().toISOString(),
+            nodeCount: exportedGraph.nodes.length,
+            edgeCount: exportedGraph.edges.length,
+            version: exportedGraph.metadata ? (exportedGraph.metadata.version || 0) + 1 : 1
+        };
+        // Сохраняем отсортированный граф с улучшенными метаданными
+        fs_extra_1.default.writeJsonSync(graphPath, exportedGraph, { spaces: 2 });
     }
     catch (error) {
         console.error(`Error saving graph for ${projectName} to ${graphPath}:`, error);
-        // Optionally, re-throw or handle the error more robustly
         throw new Error(`Failed to save graph: ${error instanceof Error ? error.message : String(error)}`);
     }
 };
 // --- End Graph Helper Functions ---
 // --- Graph Tools Implementation and Registration ---
-// Add Node
-server.tool("mcp_memory_bank_add_node", "Adds a node to the project's knowledge graph.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    id: zod_1.z.string().min(1).describe("Unique ID for the node"),
-    type: zod_1.z.string().min(1).describe("Type of the node (e.g., Function, File, Concept)"),
-    label: zod_1.z.string().min(1).describe("Human-readable label for the node"),
-    data: zod_1.z.record(zod_1.z.any()).optional().describe("Optional structured data for the node"),
-}, async ({ project_name, id, type, label, data }) => {
-    try {
-        const graph = loadGraph(project_name);
-        if (graph.hasNode(id)) {
-            // Option 1: Return error if node exists
-            return { content: [{ type: "text", text: `Error: Node with ID ${id} already exists in project ${project_name}. Use update_node instead.` }] };
-            // Option 2: Update existing node (merge attributes) - Choose one approach
-            // graph.mergeNodeAttributes(id, { id, type, label, data: data || {} });
-        }
-        else {
-            graph.addNode(id, { id, type, label, data: data || {} }); // Ensure data is at least an empty object and cast type
-        }
-        saveGraph(project_name, graph);
-        return { content: [{ type: "text", text: `Node ${id} added/updated successfully in project ${project_name}.` }] };
-    }
-    catch (error) {
-        console.error("Error adding node:", error);
-        return { content: [{ type: "text", text: `Error adding node: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
+// Define Zod schemas for batch operations
+const BatchNodeAddSchema = zod_1.z.object({
+    id: zod_1.z.string().min(1).describe("Уникальный ID для узла"),
+    type: zod_1.z.string().min(1).describe("Тип узла (например, Function, File, Concept)"),
+    label: zod_1.z.string().min(1).describe("Человекочитаемая метка узла"),
+    data: zod_1.z.record(zod_1.z.any()).optional().describe("Опциональные структурированные данные узла"),
 });
-// Update Node
-server.tool("mcp_memory_bank_update_node", "Updates an existing node in the project's knowledge graph.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    id: zod_1.z.string().min(1).describe("ID of the node to update"),
-    newLabel: zod_1.z.string().optional().describe("Optional new label for the node"),
-    data_to_merge: zod_1.z.record(zod_1.z.any()).optional().describe("Optional data to merge into the node's existing data"),
-}, async ({ project_name, id, newLabel, data_to_merge }) => {
-    try {
-        const graph = loadGraph(project_name);
-        if (!graph.hasNode(id)) {
-            return { content: [{ type: "text", text: `Error: Node with ID ${id} not found in project ${project_name}.` }] };
-        }
-        const existingAttributes = graph.getNodeAttributes(id);
-        const newData = { ...existingAttributes.data, ...(data_to_merge || {}) }; // Basic merge
-        const updatedAttributes = {}; // Use Partial for updates
-        if (newLabel)
-            updatedAttributes.label = newLabel;
-        // Only include data in update if data_to_merge was provided
-        if (data_to_merge)
-            updatedAttributes.data = newData;
-        // Only update if there are changes
-        if (Object.keys(updatedAttributes).length > 0) {
-            graph.mergeNodeAttributes(id, updatedAttributes);
-            saveGraph(project_name, graph);
-            return { content: [{ type: "text", text: `Node ${id} updated successfully in project ${project_name}.` }] };
-        }
-        else {
-            return { content: [{ type: "text", text: `No updates provided for node ${id}.` }] };
-        }
-    }
-    catch (error) {
-        console.error("Error updating node:", error);
-        return { content: [{ type: "text", text: `Error updating node: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
+const BatchEdgeAddSchema = zod_1.z.object({
+    sourceId: zod_1.z.string().min(1).describe("ID исходного узла"),
+    targetId: zod_1.z.string().min(1).describe("ID целевого узла"),
+    relationshipType: zod_1.z.string().min(1).describe("Тип отношения (например, CALLS, IMPLEMENTS)"),
 });
-// Add Edge
-server.tool("mcp_memory_bank_add_edge", "Adds a directed edge (relationship) between two nodes.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    sourceId: zod_1.z.string().min(1).describe("ID of the source node"),
-    targetId: zod_1.z.string().min(1).describe("ID of the target node"),
-    relationshipType: zod_1.z.string().min(1).describe("Type of the relationship (e.g., CALLS, IMPLEMENTS)"),
-}, async ({ project_name, sourceId, targetId, relationshipType }) => {
-    try {
-        const graph = loadGraph(project_name);
-        if (!graph.hasNode(sourceId)) {
-            return { content: [{ type: "text", text: `Error: Source node ${sourceId} not found.` }] };
-        }
-        if (!graph.hasNode(targetId)) {
-            return { content: [{ type: "text", text: `Error: Target node ${targetId} not found.` }] };
-        }
-        try {
-            // Allows multiple edges of the same type between nodes
-            graph.addDirectedEdge(sourceId, targetId, { relationshipType });
-            saveGraph(project_name, graph);
-            return { content: [{ type: "text", text: `Edge from ${sourceId} to ${targetId} (${relationshipType}) added successfully.` }] };
-        }
-        catch (edgeError) {
-            console.error("Error adding edge:", edgeError);
-            return { content: [{ type: "text", text: `Error adding edge: ${edgeError instanceof Error ? edgeError.message : String(edgeError)}` }] };
-        }
-    }
-    catch (error) {
-        console.error("Error adding edge:", error);
-        return { content: [{ type: "text", text: `Error adding edge: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
+const BatchNodeUpdateSchema = zod_1.z.object({
+    id: zod_1.z.string().min(1).describe("ID узла для обновления"),
+    newLabel: zod_1.z.string().optional().describe("Новая метка для узла"),
+    data: zod_1.z.record(zod_1.z.any()).optional().describe("Данные для объединения с существующими данными узла"),
 });
-// Delete Node
-server.tool("mcp_memory_bank_delete_node", "Deletes a node and its connected edges from the graph.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    id: zod_1.z.string().min(1).describe("ID of the node to delete"),
-}, async ({ project_name, id }) => {
-    try {
-        const graph = loadGraph(project_name);
-        if (!graph.hasNode(id)) {
-            return { content: [{ type: "text", text: `Node ${id} not found, no deletion performed.` }] };
-        }
-        graph.dropNode(id); // dropNode also removes connected edges
-        saveGraph(project_name, graph);
-        return { content: [{ type: "text", text: `Node ${id} and its edges deleted successfully.` }] };
-    }
-    catch (error) {
-        console.error("Error deleting node:", error);
-        return { content: [{ type: "text", text: `Error deleting node: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
+const BatchEdgeDeleteSchema = zod_1.z.object({
+    sourceId: zod_1.z.string().min(1).describe("ID исходного узла"),
+    targetId: zod_1.z.string().min(1).describe("ID целевого узла"),
+    relationshipType: zod_1.z.string().optional().describe("Тип отношения для удаления (если не указан, удаляются все отношения между указанными узлами)"),
 });
-// Delete Edge
-server.tool("mcp_memory_bank_delete_edge", "Deletes a specific directed edge between two nodes.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    sourceId: zod_1.z.string().min(1).describe("ID of the source node"),
-    targetId: zod_1.z.string().min(1).describe("ID of the target node"),
-    relationshipType: zod_1.z.string().min(1).describe("Type of the relationship to delete"),
-}, async ({ project_name, sourceId, targetId, relationshipType }) => {
-    try {
-        const graph = loadGraph(project_name);
-        const edgesToDelete = [];
-        // Use graph.edges(sourceId, targetId) for potentially simpler iteration if graphology version supports it well
-        graph.forEachDirectedEdge(sourceId, targetId, (edgeKey, attributes) => {
-            if (attributes.relationshipType === relationshipType) {
-                edgesToDelete.push(edgeKey);
-            }
-        });
-        if (edgesToDelete.length === 0) {
-            return { content: [{ type: "text", text: `Edge from ${sourceId} to ${targetId} (${relationshipType}) not found.` }] };
-        }
-        edgesToDelete.forEach(edgeKey => graph.dropEdge(edgeKey));
-        saveGraph(project_name, graph);
-        return { content: [{ type: "text", text: `Deleted ${edgesToDelete.length} edge(s) from ${sourceId} to ${targetId} (${relationshipType}).` }] };
-    }
-    catch (error) {
-        console.error("Error deleting edge:", error);
-        return { content: [{ type: "text", text: `Error deleting edge: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
+// Define Zod schemas for search and query operations
+const SearchGraphSchema = zod_1.z.object({
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    query: zod_1.z.string().min(1).describe("Строка поиска"),
+    search_in: zod_1.z.array(zod_1.z.enum(["id", "type", "label", "data"])).default(["id", "type", "label"]).describe("Где искать (id, type, label, data)"),
+    case_sensitive: zod_1.z.boolean().default(false).describe("Учитывать регистр"),
+    limit: zod_1.z.number().int().positive().default(10).describe("Максимальное количество результатов")
 });
-// Get Node
-server.tool("mcp_memory_bank_get_node", "Retrieves details of a specific node.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    id: zod_1.z.string().min(1).describe("ID of the node to retrieve"),
-}, async ({ project_name, id }) => {
-    try {
-        const graph = loadGraph(project_name);
-        if (!graph.hasNode(id)) {
-            return { content: [{ type: "text", text: `Node ${id} not found.` }] };
-        }
-        const attributes = graph.getNodeAttributes(id);
-        const nodeDataString = JSON.stringify(attributes, null, 2);
-        return { content: [{ type: "text", text: `Node ${id} details:\n${nodeDataString}` }] };
-    }
-    catch (error) {
-        console.error("Error getting node:", error);
-        return { content: [{ type: "text", text: `Error getting node: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
-});
-// Get All Nodes
-server.tool("mcp_memory_bank_get_all_nodes", "Retrieves all nodes in the graph.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-}, async ({ project_name }) => {
-    try {
-        const graph = loadGraph(project_name);
-        const nodes = [];
-        graph.forEachNode((nodeId, attributes) => {
-            nodes.push({ id: nodeId, attributes: attributes });
-        });
-        // Handle potentially large output - maybe summarize or paginate in future?
-        const nodesString = JSON.stringify(nodes, null, 2);
-        return { content: [{ type: "text", text: `All nodes in project ${project_name}:
-${nodesString}` }] };
-    }
-    catch (error) {
-        console.error("Error getting all nodes:", error);
-        return { content: [{ type: "text", text: `Error getting all nodes: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
-});
-// Get All Edges
-server.tool("mcp_memory_bank_get_all_edges", "Retrieves all edges in the graph.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-}, async ({ project_name }) => {
-    try {
-        const graph = loadGraph(project_name);
-        const edges = [];
-        // Use graph.edges() iterator for potentially cleaner code
-        graph.forEachEdge((edgeKey, attributes, source, target, _sourceAttributes, _targetAttributes, undirected) => {
-            edges.push({ key: edgeKey, source, target, attributes: attributes, undirected });
-        });
-        const edgesString = JSON.stringify(edges, null, 2);
-        return { content: [{ type: "text", text: `All edges in project ${project_name}:
-${edgesString}` }] };
-    }
-    catch (error) {
-        console.error("Error getting all edges:", error);
-        return { content: [{ type: "text", text: `Error getting all edges: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
-});
-// Query Graph (Basic Example: find nodes by type/label and neighbors)
-// Define Zod schema for the query object
+// Schema for graph queries with filtering
 const QueryObjectSchema = zod_1.z.object({
     filters: zod_1.z.array(zod_1.z.object({
-        attribute: zod_1.z.enum(["type", "label", "dataKey"]), // Which attribute to filter on
-        value: zod_1.z.string(), // The value to match (simple substring match for now)
-        dataKey: zod_1.z.string().optional().describe("Specific key within 'data' if attribute is 'dataKey'")
-    })).optional().describe("Filters to apply to nodes"),
-    neighborsOf: zod_1.z.string().optional().describe("Find neighbors of this node ID"),
-    relationshipType: zod_1.z.string().optional().describe("Filter neighbors by relationship type (used with neighborsOf)"),
-    direction: zod_1.z.enum(["in", "out", "both"]).optional().default("both").describe("Direction of neighbors (used with neighborsOf)"),
-}).describe("Query object for searching the graph");
-server.tool("mcp_memory_bank_query_graph", "Queries the knowledge graph based on filters or neighbors.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    query: QueryObjectSchema,
+        attribute: zod_1.z.enum(["type", "label", "dataKey"]).describe("Атрибут для фильтрации"),
+        value: zod_1.z.string().describe("Значение для сравнения"),
+        dataKey: zod_1.z.string().optional().describe("Ключ в объекте data, если attribute='dataKey'")
+    })).optional().describe("Фильтры для узлов"),
+    neighborsOf: zod_1.z.string().optional().describe("ID узла для поиска соседей"),
+    relationshipType: zod_1.z.string().optional().describe("Тип отношения для фильтрации соседей"),
+    direction: zod_1.z.enum(["in", "out", "both"]).optional().default("both").describe("Направление для соседей"),
+    limit: zod_1.z.number().int().positive().optional().default(50).describe("Максимальное количество результатов")
+});
+// Schema for retrieving specific nodes and their relations
+const OpenNodesSchema = zod_1.z.object({
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    node_ids: zod_1.z.array(zod_1.z.string()).min(1).describe("Массив ID узлов"),
+    include_relations: zod_1.z.boolean().default(true).describe("Включать связи между узлами")
+});
+// Batch Add Operation
+server.tool("mcp_memory_bank_batch_add", "Добавляет несколько узлов и рёбер в одной транзакции, сохраняя алфавитный порядок.", {
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    nodes: zod_1.z.array(BatchNodeAddSchema).optional().describe("Массив узлов для добавления"),
+    edges: zod_1.z.array(BatchEdgeAddSchema).optional().describe("Массив рёбер для добавления"),
+    silent_mode: zod_1.z.boolean().default(false).describe("Не выдавать ошибки для существующих элементов")
+}, async ({ project_name, nodes, edges, silent_mode }) => {
+    try {
+        // Валидация входных данных
+        if ((!nodes || nodes.length === 0) && (!edges || edges.length === 0)) {
+            return {
+                content: [{
+                        type: "text",
+                        text: "Ошибка: Для выполнения операции требуется указать хотя бы один узел или ребро."
+                    }]
+            };
+        }
+        // Загружаем граф один раз для всей пакетной операции
+        const graph = loadGraph(project_name);
+        // Отслеживаем результаты для подробного отчёта
+        const results = {
+            nodesAdded: 0,
+            nodesSkipped: 0,
+            edgesAdded: 0,
+            edgesSkipped: 0,
+            errors: []
+        };
+        // Сначала обрабатываем все узлы
+        if (nodes && nodes.length > 0) {
+            // Сортируем узлы по алфавиту (по ID) перед обработкой
+            const sortedNodes = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+            for (const node of sortedNodes) {
+                try {
+                    if (graph.hasNode(node.id)) {
+                        // Пропускаем существующие узлы, чтобы избежать перезаписи
+                        if (!silent_mode) {
+                            results.nodesSkipped++;
+                            results.errors.push(`Узел ${node.id} уже существует и был пропущен.`);
+                        }
+                    }
+                    else {
+                        const metadata = createInitialMetadata();
+                        graph.addNode(node.id, {
+                            id: node.id,
+                            type: node.type,
+                            label: node.label,
+                            data: node.data || {},
+                            metadata
+                        });
+                        results.nodesAdded++;
+                    }
+                }
+                catch (nodeError) {
+                    results.errors.push(`Ошибка при обработке узла ${node.id}: ${nodeError instanceof Error ? nodeError.message : String(nodeError)}`);
+                }
+            }
+        }
+        // Затем обрабатываем все рёбра после добавления узлов
+        if (edges && edges.length > 0) {
+            // Сортируем рёбра по исходному узлу, затем по целевому узлу, затем по типу отношения
+            const sortedEdges = [...edges].sort((a, b) => {
+                const sourceCompare = a.sourceId.localeCompare(b.sourceId);
+                if (sourceCompare !== 0)
+                    return sourceCompare;
+                const targetCompare = a.targetId.localeCompare(b.targetId);
+                if (targetCompare !== 0)
+                    return targetCompare;
+                return a.relationshipType.localeCompare(b.relationshipType);
+            });
+            for (const edge of sortedEdges) {
+                try {
+                    // Проверяем, что исходный и целевой узлы существуют
+                    if (!graph.hasNode(edge.sourceId)) {
+                        results.edgesSkipped++;
+                        results.errors.push(`Ребро пропущено: Исходный узел ${edge.sourceId} не найден.`);
+                        continue;
+                    }
+                    if (!graph.hasNode(edge.targetId)) {
+                        results.edgesSkipped++;
+                        results.errors.push(`Ребро пропущено: Целевой узел ${edge.targetId} не найден.`);
+                        continue;
+                    }
+                    // Добавляем ребро с метаданными
+                    const metadata = createInitialMetadata();
+                    graph.addDirectedEdge(edge.sourceId, edge.targetId, {
+                        relationshipType: edge.relationshipType,
+                        metadata
+                    });
+                    results.edgesAdded++;
+                }
+                catch (edgeError) {
+                    results.errors.push(`Ошибка при обработке ребра от ${edge.sourceId} к ${edge.targetId}: ${edgeError instanceof Error ? edgeError.message : String(edgeError)}`);
+                }
+            }
+        }
+        // Сохраняем граф только один раз после всех операций (с сортировкой)
+        saveGraph(project_name, graph);
+        // Формируем сообщение с результатами
+        let resultMessage = `Операция пакетного добавления выполнена для проекта ${project_name}:\n`;
+        resultMessage += `- Узлов добавлено: ${results.nodesAdded}\n`;
+        resultMessage += `- Узлов пропущено: ${results.nodesSkipped}\n`;
+        resultMessage += `- Рёбер добавлено: ${results.edgesAdded}\n`;
+        resultMessage += `- Рёбер пропущено: ${results.edgesSkipped}\n`;
+        if (results.errors.length > 0) {
+            resultMessage += `\nПредупреждения/Ошибки (${results.errors.length}):\n`;
+            resultMessage += results.errors.map(err => `- ${err}`).join('\n');
+        }
+        return { content: [{ type: "text", text: resultMessage }] };
+    }
+    catch (error) {
+        console.error("Ошибка пакетного добавления:", error);
+        return {
+            content: [{
+                    type: "text",
+                    text: `Ошибка пакетного добавления: ${error instanceof Error ? error.message : String(error)}`
+                }]
+        };
+    }
+});
+// Batch Update Operation
+server.tool("mcp_memory_bank_batch_update", "Обновляет несколько существующих узлов в одной транзакции", {
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    nodes: zod_1.z.array(BatchNodeUpdateSchema).describe("Массив узлов для обновления"),
+    silent_mode: zod_1.z.boolean().default(false).describe("Не выдавать ошибки для отсутствующих элементов")
+}, async ({ project_name, nodes, silent_mode }) => {
+    try {
+        // Валидация входных данных
+        if (!nodes || nodes.length === 0) {
+            return {
+                content: [{
+                        type: "text",
+                        text: "Ошибка: Для выполнения операции обновления требуется указать хотя бы один узел."
+                    }]
+            };
+        }
+        // Загружаем граф
+        const graph = loadGraph(project_name);
+        // Отслеживаем результаты
+        const results = {
+            nodesUpdated: 0,
+            nodesSkipped: 0,
+            errors: []
+        };
+        // Сортируем узлы по алфавиту (по ID) перед обработкой
+        const sortedNodes = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+        for (const node of sortedNodes) {
+            try {
+                if (!graph.hasNode(node.id)) {
+                    if (!silent_mode) {
+                        results.nodesSkipped++;
+                        results.errors.push(`Узел ${node.id} не найден и был пропущен.`);
+                    }
+                    continue;
+                }
+                const existingAttributes = graph.getNodeAttributes(node.id);
+                const updatedAttributes = {};
+                // Обновляем метку, если указана
+                if (node.newLabel) {
+                    updatedAttributes.label = node.newLabel;
+                }
+                // Объединяем данные, если указаны
+                if (node.data) {
+                    updatedAttributes.data = { ...existingAttributes.data, ...node.data };
+                }
+                // Обновляем только если есть изменения
+                if (Object.keys(updatedAttributes).length > 0) {
+                    // Обновляем метаданные
+                    updatedAttributes.metadata = updateMetadata(existingAttributes.metadata || createInitialMetadata());
+                    graph.mergeNodeAttributes(node.id, updatedAttributes);
+                    results.nodesUpdated++;
+                }
+                else {
+                    results.nodesSkipped++;
+                    results.errors.push(`Для узла ${node.id} не указаны параметры для обновления.`);
+                }
+            }
+            catch (nodeError) {
+                results.errors.push(`Ошибка при обновлении узла ${node.id}: ${nodeError instanceof Error ? nodeError.message : String(nodeError)}`);
+            }
+        }
+        // Сохраняем граф только один раз после всех операций (с сортировкой)
+        saveGraph(project_name, graph);
+        // Формируем сообщение с результатами
+        let resultMessage = `Операция пакетного обновления выполнена для проекта ${project_name}:\n`;
+        resultMessage += `- Узлов обновлено: ${results.nodesUpdated}\n`;
+        resultMessage += `- Узлов пропущено: ${results.nodesSkipped}\n`;
+        if (results.errors.length > 0) {
+            resultMessage += `\nПредупреждения/Ошибки (${results.errors.length}):\n`;
+            resultMessage += results.errors.map(err => `- ${err}`).join('\n');
+        }
+        return { content: [{ type: "text", text: resultMessage }] };
+    }
+    catch (error) {
+        console.error("Ошибка пакетного обновления:", error);
+        return {
+            content: [{
+                    type: "text",
+                    text: `Ошибка пакетного обновления: ${error instanceof Error ? error.message : String(error)}`
+                }]
+        };
+    }
+});
+// Batch Delete Operation
+server.tool("mcp_memory_bank_batch_delete", "Удаляет несколько узлов (вместе с их связями) или конкретные рёбра в одной транзакции", {
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    nodeIds: zod_1.z.array(zod_1.z.string()).optional().describe("Массив ID узлов для удаления (вместе с их связями)"),
+    edges: zod_1.z.array(BatchEdgeDeleteSchema).optional().describe("Массив конкретных рёбер для удаления"),
+    silent_mode: zod_1.z.boolean().default(true).describe("Не выдавать ошибки для отсутствующих элементов")
+}, async ({ project_name, nodeIds, edges, silent_mode }) => {
+    try {
+        // Валидация входных данных
+        if ((!nodeIds || nodeIds.length === 0) && (!edges || edges.length === 0)) {
+            return {
+                content: [{
+                        type: "text",
+                        text: "Ошибка: Для выполнения операции удаления требуется указать хотя бы один узел или ребро."
+                    }]
+            };
+        }
+        // Загружаем граф
+        const graph = loadGraph(project_name);
+        // Отслеживаем результаты
+        const results = {
+            nodesDeleted: 0,
+            nodesSkipped: 0,
+            edgesDeleted: 0,
+            edgesSkipped: 0,
+            errors: []
+        };
+        // Сначала удаляем узлы, если указаны
+        if (nodeIds && nodeIds.length > 0) {
+            // Сортируем ID узлов по алфавиту перед обработкой
+            const sortedNodeIds = [...nodeIds].sort((a, b) => a.localeCompare(b));
+            for (const nodeId of sortedNodeIds) {
+                try {
+                    if (!graph.hasNode(nodeId)) {
+                        if (!silent_mode) {
+                            results.nodesSkipped++;
+                            results.errors.push(`Узел ${nodeId} не найден и был пропущен.`);
+                        }
+                        continue;
+                    }
+                    // dropNode автоматически удаляет все связанные рёбра
+                    graph.dropNode(nodeId);
+                    results.nodesDeleted++;
+                }
+                catch (nodeError) {
+                    results.errors.push(`Ошибка при удалении узла ${nodeId}: ${nodeError instanceof Error ? nodeError.message : String(nodeError)}`);
+                }
+            }
+        }
+        // Затем удаляем рёбра, если указаны
+        if (edges && edges.length > 0) {
+            // Сортируем рёбра по исходному узлу, затем по целевому узлу
+            const sortedEdges = [...edges].sort((a, b) => {
+                const sourceCompare = a.sourceId.localeCompare(b.sourceId);
+                if (sourceCompare !== 0)
+                    return sourceCompare;
+                return a.targetId.localeCompare(b.targetId);
+            });
+            for (const edge of sortedEdges) {
+                try {
+                    // Проверяем, что исходный и целевой узлы существуют
+                    if (!graph.hasNode(edge.sourceId)) {
+                        if (!silent_mode) {
+                            results.edgesSkipped++;
+                            results.errors.push(`Ребро пропущено: Исходный узел ${edge.sourceId} не найден.`);
+                        }
+                        continue;
+                    }
+                    if (!graph.hasNode(edge.targetId)) {
+                        if (!silent_mode) {
+                            results.edgesSkipped++;
+                            results.errors.push(`Ребро пропущено: Целевой узел ${edge.targetId} не найден.`);
+                        }
+                        continue;
+                    }
+                    const edgesToDelete = [];
+                    // Находим рёбра для удаления
+                    graph.forEachDirectedEdge(edge.sourceId, edge.targetId, (edgeKey, attributes) => {
+                        // Если тип отношения указан, удаляем только рёбра этого типа
+                        // Иначе удаляем все рёбра между этими узлами
+                        if (!edge.relationshipType ||
+                            attributes.relationshipType === edge.relationshipType) {
+                            edgesToDelete.push(edgeKey);
+                        }
+                    });
+                    if (edgesToDelete.length === 0) {
+                        if (!silent_mode) {
+                            results.edgesSkipped++;
+                            const relationshipText = edge.relationshipType ?
+                                `с типом '${edge.relationshipType}'` : "";
+                            results.errors.push(`Рёбра от ${edge.sourceId} к ${edge.targetId} ${relationshipText} не найдены.`);
+                        }
+                        continue;
+                    }
+                    // Удаляем рёбра
+                    edgesToDelete.forEach(edgeKey => graph.dropEdge(edgeKey));
+                    results.edgesDeleted += edgesToDelete.length;
+                }
+                catch (edgeError) {
+                    results.errors.push(`Ошибка при удалении ребра от ${edge.sourceId} к ${edge.targetId}: ${edgeError instanceof Error ? edgeError.message : String(edgeError)}`);
+                }
+            }
+        }
+        // Сохраняем граф только один раз после всех операций (с сортировкой)
+        saveGraph(project_name, graph);
+        // Формируем сообщение с результатами
+        let resultMessage = `Операция пакетного удаления выполнена для проекта ${project_name}:\n`;
+        resultMessage += `- Узлов удалено: ${results.nodesDeleted}\n`;
+        resultMessage += `- Узлов пропущено: ${results.nodesSkipped}\n`;
+        resultMessage += `- Рёбер удалено: ${results.edgesDeleted}\n`;
+        resultMessage += `- Рёбер пропущено: ${results.edgesSkipped}\n`;
+        if (results.errors.length > 0) {
+            resultMessage += `\nПредупреждения/Ошибки (${results.errors.length}):\n`;
+            resultMessage += results.errors.map(err => `- ${err}`).join('\n');
+        }
+        return { content: [{ type: "text", text: resultMessage }] };
+    }
+    catch (error) {
+        console.error("Ошибка пакетного удаления:", error);
+        return {
+            content: [{
+                    type: "text",
+                    text: `Ошибка пакетного удаления: ${error instanceof Error ? error.message : String(error)}`
+                }]
+        };
+    }
+});
+// Search Graph Operation
+server.tool("mcp_memory_bank_search_graph", "Поиск в графе знаний по различным параметрам", {
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    query: zod_1.z.string().min(1).describe("Строка поиска"),
+    search_in: zod_1.z.array(zod_1.z.enum(["id", "type", "label", "data"])).default(["id", "type", "label"]).describe("Где искать (id, type, label, data)"),
+    case_sensitive: zod_1.z.boolean().default(false).describe("Учитывать регистр"),
+    limit: zod_1.z.number().int().positive().default(10).describe("Максимальное количество результатов")
+}, async ({ project_name, query, search_in, case_sensitive, limit }) => {
+    try {
+        const graph = loadGraph(project_name);
+        const results = { nodes: [], edges: [] };
+        const foundNodeIds = new Set();
+        // Нормализация строки поиска для регистронезависимого поиска
+        const normalizedQuery = case_sensitive ? query : query.toLowerCase();
+        // Поиск по узлам
+        graph.forEachNode((nodeId, attributes) => {
+            if (results.nodes.length >= limit)
+                return;
+            const nodeAttrs = attributes;
+            let match = false;
+            // Поиск по ID
+            if (search_in.includes("id")) {
+                const normalizedId = case_sensitive ? nodeId : nodeId.toLowerCase();
+                if (normalizedId.includes(normalizedQuery))
+                    match = true;
+            }
+            // Поиск по типу
+            if (!match && search_in.includes("type")) {
+                const normalizedType = case_sensitive ? nodeAttrs.type : nodeAttrs.type.toLowerCase();
+                if (normalizedType.includes(normalizedQuery))
+                    match = true;
+            }
+            // Поиск по метке
+            if (!match && search_in.includes("label")) {
+                const normalizedLabel = case_sensitive ? nodeAttrs.label : nodeAttrs.label.toLowerCase();
+                if (normalizedLabel.includes(normalizedQuery))
+                    match = true;
+            }
+            // Поиск в данных
+            if (!match && search_in.includes("data") && nodeAttrs.data) {
+                const dataString = JSON.stringify(nodeAttrs.data);
+                const normalizedData = case_sensitive ? dataString : dataString.toLowerCase();
+                if (normalizedData.includes(normalizedQuery))
+                    match = true;
+            }
+            if (match) {
+                results.nodes.push({ id: nodeId, attributes: nodeAttrs });
+                foundNodeIds.add(nodeId);
+            }
+        });
+        // Поиск связанных рёбер между найденными узлами
+        if (foundNodeIds.size > 0) {
+            graph.forEachEdge((edgeKey, attributes, source, target) => {
+                if (foundNodeIds.has(source) && foundNodeIds.has(target)) {
+                    results.edges.push({
+                        key: edgeKey,
+                        source,
+                        target,
+                        attributes
+                    });
+                }
+            });
+        }
+        return {
+            content: [{
+                    type: "text",
+                    text: `Результаты поиска для "${query}" в проекте ${project_name}:\n${JSON.stringify(results, null, 2)}`
+                }]
+        };
+    }
+    catch (error) {
+        console.error("Ошибка поиска по графу:", error);
+        return {
+            content: [{
+                    type: "text",
+                    text: `Ошибка поиска по графу: ${error instanceof Error ? error.message : String(error)}`
+                }]
+        };
+    }
+});
+// Query Graph Operation
+server.tool("mcp_memory_bank_query_graph", "Выполнение запросов к графу знаний с фильтрацией", {
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    query: QueryObjectSchema.describe("Объект запроса с фильтрами и параметрами поиска соседей")
 }, async ({ project_name, query }) => {
     try {
         const graph = loadGraph(project_name);
-        const resultNodes = []; // Initialize explicitly
+        const results = { nodes: [], edges: [] };
+        const foundNodeIds = new Set();
+        const limit = query.limit || 50;
+        // Поиск соседей указанного узла
         if (query.neighborsOf) {
             const nodeId = query.neighborsOf;
             if (!graph.hasNode(nodeId)) {
-                return { content: [{ type: "text", text: `Query Error: Node ${nodeId} not found.` }] };
+                return {
+                    content: [{
+                            type: "text",
+                            text: `Ошибка: Узел с ID ${nodeId} не найден в проекте ${project_name}.`
+                        }]
+                };
             }
-            const foundNeighbors = new Set(); // Track found neighbors to avoid duplicates in result
+            // Функция для обработки соседнего узла
             const processNeighbor = (neighborId, attributes) => {
-                if (foundNeighbors.has(neighborId))
-                    return; // Skip if already added
+                if (foundNodeIds.has(neighborId) || results.nodes.length >= limit)
+                    return;
+                // Проверяем тип отношения, если указан
                 let includeNeighbor = true;
                 if (query.relationshipType) {
                     includeNeighbor = false;
-                    // Check edges in the relevant direction(s)
+                    // Проверяем рёбра в указанном направлении
                     if (query.direction === 'out' || query.direction === 'both') {
-                        graph.forEachDirectedEdge(nodeId, neighborId, (key, attrs) => {
-                            if (attrs.relationshipType === query.relationshipType)
+                        graph.forEachDirectedEdge(nodeId, neighborId, (edgeKey, attrs) => {
+                            if (attrs.relationshipType === query.relationshipType) {
                                 includeNeighbor = true;
+                                // Добавляем ребро в результаты
+                                results.edges.push({
+                                    key: edgeKey,
+                                    source: nodeId,
+                                    target: neighborId,
+                                    attributes: attrs
+                                });
+                            }
                         });
                     }
                     if (!includeNeighbor && (query.direction === 'in' || query.direction === 'both')) {
-                        graph.forEachDirectedEdge(neighborId, nodeId, (key, attrs) => {
-                            if (attrs.relationshipType === query.relationshipType)
+                        graph.forEachDirectedEdge(neighborId, nodeId, (edgeKey, attrs) => {
+                            if (attrs.relationshipType === query.relationshipType) {
                                 includeNeighbor = true;
+                                // Добавляем ребро в результаты
+                                results.edges.push({
+                                    key: edgeKey,
+                                    source: neighborId,
+                                    target: nodeId,
+                                    attributes: attrs
+                                });
+                            }
+                        });
+                    }
+                }
+                else {
+                    // Если тип отношения не указан, добавляем все рёбра между узлами
+                    if (query.direction === 'out' || query.direction === 'both') {
+                        graph.forEachDirectedEdge(nodeId, neighborId, (edgeKey, attrs) => {
+                            results.edges.push({
+                                key: edgeKey,
+                                source: nodeId,
+                                target: neighborId,
+                                attributes: attrs
+                            });
+                        });
+                    }
+                    if (query.direction === 'in' || query.direction === 'both') {
+                        graph.forEachDirectedEdge(neighborId, nodeId, (edgeKey, attrs) => {
+                            results.edges.push({
+                                key: edgeKey,
+                                source: neighborId,
+                                target: nodeId,
+                                attributes: attrs
+                            });
                         });
                     }
                 }
                 if (includeNeighbor) {
-                    resultNodes.push({ id: neighborId, attributes: attributes });
-                    foundNeighbors.add(neighborId);
+                    results.nodes.push({ id: neighborId, attributes });
+                    foundNodeIds.add(neighborId);
                 }
             };
+            // Добавляем исходный узел в результаты
+            const sourceAttributes = graph.getNodeAttributes(nodeId);
+            results.nodes.push({ id: nodeId, attributes: sourceAttributes });
+            foundNodeIds.add(nodeId);
+            // Получаем соседей в указанном направлении
             switch (query.direction) {
                 case "in":
                     graph.forEachInNeighbor(nodeId, processNeighbor);
@@ -790,18 +1141,21 @@ server.tool("mcp_memory_bank_query_graph", "Queries the knowledge graph based on
                 case "out":
                     graph.forEachOutNeighbor(nodeId, processNeighbor);
                     break;
-                default:
+                default: // 'both'
                     graph.forEachNeighbor(nodeId, processNeighbor);
-                    break; // both
+                    break;
             }
         }
+        // Поиск по фильтрам
         else if (query.filters && query.filters.length > 0) {
-            // Filter nodes
             graph.forEachNode((nodeId, attributes) => {
+                if (results.nodes.length >= limit)
+                    return;
                 const nodeAttrs = attributes;
                 let match = true;
                 for (const filter of query.filters) {
                     let attributeValue;
+                    // Определяем значение атрибута в зависимости от типа фильтра
                     if (filter.attribute === "type") {
                         attributeValue = nodeAttrs.type;
                     }
@@ -812,148 +1166,131 @@ server.tool("mcp_memory_bank_query_graph", "Queries the knowledge graph based on
                         attributeValue = nodeAttrs.data[filter.dataKey];
                     }
                     else {
-                        match = false; // Invalid filter attribute combination
+                        match = false;
                         break;
                     }
-                    // Simple case-insensitive substring match (can be extended)
-                    if (typeof attributeValue !== 'string' || !attributeValue.toLowerCase().includes(filter.value.toLowerCase())) {
+                    // Простое сравнение строк (регистр не учитывается)
+                    if (typeof attributeValue !== 'string' ||
+                        !attributeValue.toLowerCase().includes(filter.value.toLowerCase())) {
                         match = false;
                         break;
                     }
                 }
                 if (match) {
-                    resultNodes.push({ id: nodeId, attributes: nodeAttrs });
+                    results.nodes.push({ id: nodeId, attributes: nodeAttrs });
+                    foundNodeIds.add(nodeId);
                 }
             });
-        }
-        else {
-            // No filters or neighborsOf specified, return all nodes as per previous logic
-            graph.forEachNode((nodeId, attributes) => {
-                resultNodes.push({ id: nodeId, attributes: attributes });
-            });
-        }
-        const resultString = JSON.stringify(resultNodes, null, 2);
-        return { content: [{ type: "text", text: `Query results for project ${project_name}:
-${resultString}` }] };
-    }
-    catch (error) {
-        console.error("Error querying graph:", error);
-        return { content: [{ type: "text", text: `Error querying graph: ${error instanceof Error ? error.message : String(error)}` }] };
-    }
-});
-// Batch Graph Operations
-// Define Zod schemas for batch operations
-const BatchNodeSchema = zod_1.z.object({
-    id: zod_1.z.string().min(1).describe("Unique ID for the node"),
-    type: zod_1.z.string().min(1).describe("Type of the node (e.g., Function, File, Concept)"),
-    label: zod_1.z.string().min(1).describe("Human-readable label for the node"),
-    data: zod_1.z.record(zod_1.z.any()).optional().describe("Optional structured data for the node"),
-});
-const BatchEdgeSchema = zod_1.z.object({
-    sourceId: zod_1.z.string().min(1).describe("ID of the source node"),
-    targetId: zod_1.z.string().min(1).describe("ID of the target node"),
-    relationshipType: zod_1.z.string().min(1).describe("Type of the relationship (e.g., CALLS, IMPLEMENTS)"),
-});
-// Batch Operations Tool
-server.tool("mcp_memory_bank_batch_operations", "Performs batch operations on nodes and edges in a single transaction.", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    nodes: zod_1.z.array(BatchNodeSchema).optional().describe("Array of nodes to add or update"),
-    edges: zod_1.z.array(BatchEdgeSchema).optional().describe("Array of edges to add"),
-    operation_type: zod_1.z.enum(["add"]).default("add").describe("Type of batch operation (currently only 'add' is supported)"),
-}, async ({ project_name, nodes, edges, operation_type }) => {
-    try {
-        // Validate inputs
-        if ((!nodes || nodes.length === 0) && (!edges || edges.length === 0)) {
-            return {
-                content: [{
-                        type: "text",
-                        text: "Error: At least one node or edge must be specified for batch operation."
-                    }]
-            };
-        }
-        // Load the graph only once for the entire batch operation
-        const graph = loadGraph(project_name);
-        // Track results for detailed reporting
-        const results = {
-            nodesAdded: 0,
-            nodesSkipped: 0,
-            edgesAdded: 0,
-            edgesSkipped: 0,
-            errors: []
-        };
-        // Process all nodes first
-        if (nodes && nodes.length > 0) {
-            for (const node of nodes) {
-                try {
-                    if (graph.hasNode(node.id)) {
-                        // Skip existing nodes to prevent overwriting
-                        results.nodesSkipped++;
-                        results.errors.push(`Node ${node.id} already exists and was skipped.`);
-                    }
-                    else {
-                        graph.addNode(node.id, {
-                            id: node.id,
-                            type: node.type,
-                            label: node.label,
-                            data: node.data || {}
+            // Ищем рёбра между найденными узлами
+            if (foundNodeIds.size > 1) {
+                graph.forEachEdge((edgeKey, attributes, source, target) => {
+                    if (foundNodeIds.has(source) && foundNodeIds.has(target)) {
+                        results.edges.push({
+                            key: edgeKey,
+                            source,
+                            target,
+                            attributes
                         });
-                        results.nodesAdded++;
                     }
-                }
-                catch (nodeError) {
-                    results.errors.push(`Error processing node ${node.id}: ${nodeError instanceof Error ? nodeError.message : String(nodeError)}`);
-                }
+                });
             }
         }
-        // Process all edges after nodes are added
-        if (edges && edges.length > 0) {
-            for (const edge of edges) {
-                try {
-                    // Verify that source and target nodes exist
-                    if (!graph.hasNode(edge.sourceId)) {
-                        results.edgesSkipped++;
-                        results.errors.push(`Edge skipped: Source node ${edge.sourceId} not found.`);
-                        continue;
+        // Если ни фильтры, ни поиск соседей не указаны, возвращаем все узлы
+        else {
+            let count = 0;
+            graph.forEachNode((nodeId, attributes) => {
+                if (count >= limit)
+                    return;
+                results.nodes.push({ id: nodeId, attributes });
+                foundNodeIds.add(nodeId);
+                count++;
+            });
+            // Добавляем рёбра между найденными узлами
+            if (foundNodeIds.size > 1) {
+                graph.forEachEdge((edgeKey, attributes, source, target) => {
+                    if (foundNodeIds.has(source) && foundNodeIds.has(target)) {
+                        results.edges.push({
+                            key: edgeKey,
+                            source,
+                            target,
+                            attributes
+                        });
                     }
-                    if (!graph.hasNode(edge.targetId)) {
-                        results.edgesSkipped++;
-                        results.errors.push(`Edge skipped: Target node ${edge.targetId} not found.`);
-                        continue;
-                    }
-                    // Add the edge
-                    graph.addDirectedEdge(edge.sourceId, edge.targetId, { relationshipType: edge.relationshipType });
-                    results.edgesAdded++;
-                }
-                catch (edgeError) {
-                    results.errors.push(`Error processing edge from ${edge.sourceId} to ${edge.targetId}: ${edgeError instanceof Error ? edgeError.message : String(edgeError)}`);
-                }
+                });
             }
         }
-        // Save the graph only once after all operations
-        saveGraph(project_name, graph);
-        // Build response message
-        let resultMessage = `Batch operation completed for project ${project_name}:\n`;
-        resultMessage += `- Nodes added: ${results.nodesAdded}\n`;
-        resultMessage += `- Nodes skipped: ${results.nodesSkipped}\n`;
-        resultMessage += `- Edges added: ${results.edgesAdded}\n`;
-        resultMessage += `- Edges skipped: ${results.edgesSkipped}\n`;
-        if (results.errors.length > 0) {
-            resultMessage += `\nWarnings/Errors (${results.errors.length}):\n`;
-            resultMessage += results.errors.map(err => `- ${err}`).join('\n');
-        }
-        return { content: [{ type: "text", text: resultMessage }] };
-    }
-    catch (error) {
-        console.error("Error in batch operation:", error);
         return {
             content: [{
                     type: "text",
-                    text: `Error in batch operation: ${error instanceof Error ? error.message : String(error)}`
+                    text: `Результаты запроса к графу в проекте ${project_name}:\n${JSON.stringify(results, null, 2)}`
+                }]
+        };
+    }
+    catch (error) {
+        console.error("Ошибка запроса к графу:", error);
+        return {
+            content: [{
+                    type: "text",
+                    text: `Ошибка запроса к графу: ${error instanceof Error ? error.message : String(error)}`
                 }]
         };
     }
 });
-// --- End Graph Tools Implementation and Registration ---
+// Get Specific Nodes Operation
+server.tool("mcp_memory_bank_open_nodes", "Получение конкретных узлов по ID и их взаимосвязей", {
+    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    node_ids: zod_1.z.array(zod_1.z.string()).min(1).describe("Массив ID узлов для получения"),
+    include_relations: zod_1.z.boolean().default(true).describe("Включать ли связи между запрошенными узлами")
+}, async ({ project_name, node_ids, include_relations }) => {
+    try {
+        const graph = loadGraph(project_name);
+        const result = { nodes: [], edges: [] };
+        const existingNodeIds = new Set();
+        // Получение запрошенных узлов
+        for (const nodeId of node_ids) {
+            if (graph.hasNode(nodeId)) {
+                const nodeAttrs = graph.getNodeAttributes(nodeId);
+                result.nodes.push({ id: nodeId, attributes: nodeAttrs });
+                existingNodeIds.add(nodeId);
+            }
+        }
+        // Если узлов меньше, чем запрошено, добавляем информацию об отсутствующих
+        if (existingNodeIds.size < node_ids.length) {
+            const missingNodes = node_ids.filter(id => !existingNodeIds.has(id));
+            if (missingNodes.length > 0) {
+                console.warn(`Не найдены узлы: ${missingNodes.join(', ')}`);
+            }
+        }
+        // Получение связей между запрошенными узлами, если требуется
+        if (include_relations && existingNodeIds.size > 1) {
+            graph.forEachEdge((edgeKey, attributes, source, target) => {
+                if (existingNodeIds.has(source) && existingNodeIds.has(target)) {
+                    result.edges.push({
+                        key: edgeKey,
+                        source,
+                        target,
+                        attributes
+                    });
+                }
+            });
+        }
+        return {
+            content: [{
+                    type: "text",
+                    text: `Узлы и их связи для проекта ${project_name}:\n${JSON.stringify(result, null, 2)}`
+                }]
+        };
+    }
+    catch (error) {
+        console.error("Ошибка получения узлов:", error);
+        return {
+            content: [{
+                    type: "text",
+                    text: `Ошибка получения узлов: ${error instanceof Error ? error.message : String(error)}`
+                }]
+        };
+    }
+});
 // Запускаем сервер с использованием stdio транспорта
 async function main() {
     try {

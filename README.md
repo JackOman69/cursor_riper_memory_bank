@@ -354,7 +354,7 @@ mcp_memory_bank_query_graph project_name="MyProject" query='{
 Изменено:
 ```javascript
 function resetPassword(email) {
-  return axios.post('/api/auth/reset', { email });
+  return axios.post('/api/v2/auth/reset', { email });
 }
 ```
 
@@ -691,6 +691,240 @@ async function getUsersByRole(role) {
 ```
 Сделай саммари всех изменений, которые ты сделал в этом чате, а затем внеси всю информацию изменений в банк памяти проекта "название_проекта" с помощью режима PLAN_EXECUTE
 ```
+
+## Возможности графа знаний
+
+Банк Памяти включает мощную систему графа знаний для моделирования связей между сущностями проекта. Основные возможности включают:
+
+### Поддержка метаданных
+- Метаданные уровня графа (временные метки, версия, счетчики)
+- Метаданные уровня узлов (даты создания/обновления, версия)
+- Метаданные уровня связей (даты создания/обновления, версия)
+
+### Пакетные операции
+Эффективные пакетные операции для управления множеством узлов и связей:
+
+```typescript
+// Добавление нескольких узлов и связей
+await mcp_memory_bank_batch_add({
+  project_name: "MyProject",
+  nodes: [
+    {
+      id: "auth-service",
+      type: "Service",
+      label: "Сервис аутентификации",
+      data: { version: "1.0.0" }
+    },
+    {
+      id: "user-service",
+      type: "Service",
+      label: "Сервис управления пользователями",
+      data: { version: "1.0.0" }
+    }
+  ],
+  edges: [
+    {
+      sourceId: "user-service",
+      targetId: "auth-service",
+      relationshipType: "DEPENDS_ON"
+    }
+  ]
+});
+
+// Обновление нескольких узлов
+await mcp_memory_bank_batch_update({
+  project_name: "MyProject",
+  nodes: [
+    {
+      id: "auth-service",
+      newLabel: "Сервис аутентификации v2",
+      data: { version: "2.0.0" }
+    }
+  ]
+});
+
+// Удаление узлов или связей
+await mcp_memory_bank_batch_delete({
+  project_name: "MyProject",
+  nodeIds: ["old-service"],
+  edges: [
+    {
+      sourceId: "service-a",
+      targetId: "service-b",
+      relationshipType: "CALLS"
+    }
+  ]
+});
+```
+
+### Возможности поиска и запросов
+
+1. Текстовый поиск:
+```typescript
+// Поиск по меткам узлов и данным
+const results = await mcp_memory_bank_search_graph({
+  project_name: "MyProject",
+  query: "аутентификация",
+  search_in: ["label", "data"],
+  case_sensitive: false,
+  limit: 10
+});
+```
+
+2. Структурированные запросы:
+```typescript
+// Поиск компонентов, зависящих от сервиса
+const results = await mcp_memory_bank_query_graph({
+  project_name: "MyProject",
+  query: {
+    neighborsOf: "auth-service",
+    direction: "in",
+    relationshipType: "DEPENDS_ON",
+    filters: [
+      { attribute: "type", value: "Component" }
+    ]
+  }
+});
+```
+
+3. Прямой доступ к узлам:
+```typescript
+// Получение конкретных узлов и их связей
+const nodes = await mcp_memory_bank_open_nodes({
+  project_name: "MyProject",
+  node_ids: ["auth-service", "user-service"],
+  include_relations: true
+});
+```
+
+## Руководство по миграции
+
+### Переход с индивидуальных операций на пакетные
+
+1. Замена операций с отдельными узлами:
+```typescript
+// Старый способ
+await mcp_memory_bank_add_node(...);
+await mcp_memory_bank_add_node(...);
+
+// Новый способ
+await mcp_memory_bank_batch_add({
+  nodes: [node1, node2],
+  edges: []
+});
+```
+
+2. Замена операций с отдельными связями:
+```typescript
+// Старый способ
+await mcp_memory_bank_add_edge(...);
+await mcp_memory_bank_add_edge(...);
+
+// Новый способ
+await mcp_memory_bank_batch_add({
+  nodes: [],
+  edges: [edge1, edge2]
+});
+```
+
+3. Замена отдельных обновлений:
+```typescript
+// Старый способ
+await mcp_memory_bank_update_node(...);
+
+// Новый способ
+await mcp_memory_bank_batch_update({
+  nodes: [
+    {
+      id: "node1",
+      newLabel: "Обновленная метка",
+      data: { /* обновленные данные */ }
+    }
+  ]
+});
+```
+
+4. Замена отдельных удалений:
+```typescript
+// Старый способ
+await mcp_memory_bank_delete_node(...);
+await mcp_memory_bank_delete_edge(...);
+
+// Новый способ
+await mcp_memory_bank_batch_delete({
+  nodeIds: ["node1"],
+  edges: [{
+    sourceId: "source",
+    targetId: "target",
+    relationshipType: "TYPE"
+  }]
+});
+```
+
+### Миграция запросов
+
+1. Замена прямого получения узлов:
+```typescript
+// Старый способ
+const node = await mcp_memory_bank_get_node(...);
+
+// Новый способ
+const { nodes } = await mcp_memory_bank_open_nodes({
+  node_ids: ["nodeId"],
+  include_relations: false
+});
+```
+
+2. Замена фильтрованных запросов:
+```typescript
+// Старый способ
+const results = await mcp_memory_bank_query_graph({
+  filters: [{ attribute: "type", value: "Service" }]
+});
+
+// Новый способ - тот же синтаксис, но с дополнительными возможностями
+const results = await mcp_memory_bank_query_graph({
+  query: {
+    filters: [{ attribute: "type", value: "Service" }],
+    // Опционально: добавление фильтрации по связям
+    neighborsOf: "someNode",
+    direction: "both",
+    relationshipType: "DEPENDS_ON"
+  }
+});
+```
+
+3. Добавление возможностей текстового поиска:
+```typescript
+// Новая возможность
+const searchResults = await mcp_memory_bank_search_graph({
+  query: "auth",
+  search_in: ["label", "data"],
+  case_sensitive: false
+});
+```
+
+### Лучшие практики
+
+1. **Использование пакетных операций**
+   - Объединяйте связанные операции в единые пакетные вызовы
+   - Эффективнее, чем множество отдельных вызовов
+   - Поддерживает целостность данных
+
+2. **Использование метаданных**
+   - Используйте метаданные для версионирования и отслеживания
+   - Включайте релевантные данные при создании узлов/связей
+   - Выполняйте запросы на основе метаданных
+
+3. **Оптимизация запросов**
+   - Используйте подходящий инструмент поиска/запроса для задачи
+   - Ограничивайте результаты где возможно
+   - Фильтруйте на уровне запроса, а не после получения данных
+
+4. **Обработка ошибок**
+   - Используйте silent_mode где уместно
+   - Проверяйте результаты операций
+   - Обрабатывайте случаи частичного успеха
 
 ## Заключение
 

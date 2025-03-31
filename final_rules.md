@@ -304,60 +304,59 @@ The Memory Bank MCP server provides these tools:
 
 ### Knowledge Graph Tools
 
-7. **mcp_memory_bank_add_node**
-   - Adds a node to the project's knowledge graph
-   - Parameters: `project_name`, `id`, `type`, `label`, `data` (optional)
+7. **mcp_memory_bank_batch_add**
+   - Добавляет несколько узлов и ребер в одной транзакции
+   - Parameters: `project_name`, `nodes` (array), `edges` (array), `silent_mode` (optional)
    - Permitted in: EXECUTE mode (only if in approved plan)
 
-8. **mcp_memory_bank_update_node**
-   - Updates an existing node in the knowledge graph
-   - Parameters: `project_name`, `id`, `newLabel` (optional), `data_to_merge` (optional)
+8. **mcp_memory_bank_batch_update**
+   - Обновляет несколько существующих узлов в одной транзакции
+   - Parameters: `project_name`, `nodes` (array), `silent_mode` (optional)
    - Permitted in: EXECUTE mode (only if in approved plan)
 
-9. **mcp_memory_bank_add_edge**
-   - Adds a directed edge (relationship) between two nodes
-   - Parameters: `project_name`, `sourceId`, `targetId`, `relationshipType`
+9. **mcp_memory_bank_batch_delete**
+   - Удаляет несколько узлов (с их связями) или конкретные ребра в одной транзакции
+   - Parameters: `project_name`, `nodeIds` (array, optional), `edges` (array, optional), `silent_mode` (optional)
    - Permitted in: EXECUTE mode (only if in approved plan)
 
-10. **mcp_memory_bank_delete_node**
-    - Deletes a node and its connected edges from the graph
-    - Parameters: `project_name`, `id`
-    - Permitted in: EXECUTE mode (only if in approved plan)
-
-11. **mcp_memory_bank_delete_edge**
-    - Deletes a specific directed edge between two nodes
-    - Parameters: `project_name`, `sourceId`, `targetId`, `relationshipType`
-    - Permitted in: EXECUTE mode (only if in approved plan)
-
-12. **mcp_memory_bank_get_node**
-    - Retrieves details of a specific node
-    - Parameters: `project_name`, `id`
+10. **mcp_memory_bank_search_graph**
+    - Поиск по графу знаний с различными параметрами
+    - Parameters: `project_name`, `query`, `search_in`, `case_sensitive`, `limit`
     - Permitted in: RESEARCH, PLAN modes
 
-13. **mcp_memory_bank_get_all_nodes**
-    - Retrieves all nodes in the graph
-    - Parameters: `project_name`
+11. **mcp_memory_bank_query_graph**
+    - Выполняет запросы к графу с фильтрацией
+    - Parameters: `project_name`, `query` (with filters, neighborsOf, relationshipType, direction)
     - Permitted in: RESEARCH, PLAN modes
 
-14. **mcp_memory_bank_get_all_edges**
-    - Retrieves all edges in the graph
-    - Parameters: `project_name`
+12. **mcp_memory_bank_open_nodes**
+    - Получает конкретные узлы по их ID и их взаимосвязи
+    - Parameters: `project_name`, `node_ids`, `include_relations`
     - Permitted in: RESEARCH, PLAN modes
-
-15. **mcp_memory_bank_query_graph**
-    - Queries the knowledge graph based on filters or neighbors
-    - Parameters: `project_name`, `query` (query object with filters or neighbor parameters)
-    - Permitted in: RESEARCH, PLAN modes
-
-16. **mcp_memory_bank_batch_operations**
-    - Performs batch operations on nodes and edges in a single transaction
-    - Parameters: `project_name`, `nodes` (array of nodes), `edges` (array of edges), `operation_type` (currently only "add" is supported)
-    - Permitted in: EXECUTE mode (only if in approved plan)
-    - Efficiency: More efficient than individual node/edge operations when creating complex structures
 
 ## Knowledge Graph Structure
 
 The Memory Bank uses a directed graph structure to represent knowledge about the project. This graph is stored in the `graph.json` file in each project directory and provides a powerful way to model relationships between different entities in the project.
+
+### Graph Metadata
+
+The graph includes metadata at multiple levels:
+
+1. **Graph Level Metadata**
+   - Last save timestamp
+   - Node and edge counts
+   - Graph version
+   - Additional state information
+
+2. **Node Level Metadata**
+   - Creation date
+   - Last update date
+   - Version information
+
+3. **Edge Level Metadata**
+   - Creation date
+   - Last update date
+   - Version information
 
 ### Node Types and Attributes
 
@@ -367,6 +366,7 @@ Each node in the graph represents an entity and has the following attributes:
 2. **type** (required): Category of the node (e.g., Function, Class, File, Concept, Requirement)
 3. **label** (required): Human-readable name for the node
 4. **data** (optional): Structured data specific to the node type
+5. **metadata**: System-managed metadata about the node
 
 #### Common Node Types
 
@@ -441,68 +441,105 @@ Edges represent relationships between nodes and have the following attributes:
 
 To build a knowledge graph for your project:
 
-1. First add nodes for key entities:
-   ```
-   mcp_memory_bank_add_node project_name="MyProject" id="file1" type="File" label="main.js" data={"path":"/src/main.js"}
-   mcp_memory_bank_add_node project_name="MyProject" id="func1" type="Function" label="processData" data={"signature":"processData(input)"}
+```typescript
+// Adding multiple nodes and edges in a single transaction
+await mcp_memory_bank_batch_add({
+  project_name: "MyProject",
+  nodes: [
+    {
+      id: "component1",
+      type: "Component",
+      label: "Main Component",
+      data: { description: "Main component of the system" }
+    },
+    {
+      id: "subcomponent1",
+      type: "Component",
+      label: "Subcomponent 1",
+      data: { description: "First subcomponent" }
+    }
+  ],
+  edges: [
+    {
+      sourceId: "component1",
+      targetId: "subcomponent1",
+      relationshipType: "CONTAINS"
+    }
+  ]
+});
+```
+
+#### Updating Nodes
+
+```typescript
+// Updating multiple nodes in a single transaction
+await mcp_memory_bank_batch_update({
+  project_name: "MyProject",
+  nodes: [
+    {
+      id: "component1",
+      newLabel: "Updated Component",
+      data: { version: "2.0.0" }
+    }
+  ]
+});
+```
+
+#### Deleting Nodes or Edges
+
+```typescript
+// Deleting nodes (and their relationships) or specific edges
+await mcp_memory_bank_batch_delete({
+  project_name: "MyProject",
+  nodeIds: ["component1"],
+  edges: [
+    {
+      sourceId: "component2",
+      targetId: "component3",
+      relationshipType: "DEPENDS_ON"
+    }
+  ]
+});
+```
+
+#### Searching and Querying
+
+1. **Text-based Search**:
+   ```typescript
+   // Search for nodes containing specific text
+   const results = await mcp_memory_bank_search_graph({
+     project_name: "MyProject",
+     query: "authentication",
+     search_in: ["label", "data"],
+     case_sensitive: false,
+     limit: 10
+   });
    ```
 
-2. Then connect nodes with relationships:
-   ```
-   mcp_memory_bank_add_edge project_name="MyProject" sourceId="file1" targetId="func1" relationshipType="CONTAINS"
-   ```
-
-3. For complex structures, use batch operations (more efficient):
-   ```
-   mcp_memory_bank_batch_operations project_name="MyProject" nodes=[
-     {"id": "component1", "type": "Component", "label": "Component 1", "data": {"description": "Main component"}},
-     {"id": "subcomponent1", "type": "Component", "label": "Subcomponent 1", "data": {"description": "First subcomponent"}}
-   ] edges=[
-     {"sourceId": "component1", "targetId": "subcomponent1", "relationshipType": "CONTAINS"}
-   ]
-   ```
-
-#### Querying the Graph
-
-The graph can be queried in several ways:
-
-1. **By Node Type**:
-   ```json
-   {
-     "filters": [
-       { "attribute": "type", "value": "Function" }
-     ]
-   }
+2. **Structured Queries**:
+   ```typescript
+   // Find all Component nodes that depend on a specific service
+   const results = await mcp_memory_bank_query_graph({
+     project_name: "MyProject",
+     query: {
+       neighborsOf: "auth-service",
+       direction: "in",
+       relationshipType: "DEPENDS_ON",
+       filters: [
+         { attribute: "type", value: "Component" }
+       ]
+     }
+   });
    ```
 
-2. **By Node Label**:
-   ```json
-   {
-     "filters": [
-       { "attribute": "label", "value": "processData" }
-     ]
-   }
-   ```
-
-3. **Finding Neighbors**:
-   ```json
-   {
-     "neighborsOf": "file1",
-     "direction": "out",
-     "relationshipType": "CONTAINS"
-   }
-   ```
-
-4. **Combined Queries**:
-   ```json
-   {
-     "neighborsOf": "file1",
-     "direction": "out",
-     "relationshipType": "CONTAINS",
-     "filters": [
-       { "attribute": "type", "value": "Function" }
-     ]
-   }
+3. **Direct Node Access**:
+   ```typescript
+   // Get specific nodes and their relationships
+   const nodes = await mcp_memory_bank_open_nodes({
+     project_name: "MyProject",
+     node_ids: ["component1", "component2"],
+     include_relations: true
+   });
    ```
 
 ### Best Practices for Knowledge Graph Management

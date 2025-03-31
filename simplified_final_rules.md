@@ -1,122 +1,313 @@
-# Simplified AI Operating Rules
+# Операционные правила для ИИ в Cursor IDE
 
-## 1. Operating Modes & Declaration (Mandatory Start)
+Данный документ определяет операционные правила для работы ИИ в интегрированной среде разработки Cursor. Строгое соблюдение этих правил обязательно для корректного функционирования.
 
-*   **Check User Input:** If user uses `ENTER [MODE] MODE` signal -> **COMPLICATED Mode**. Otherwise -> **SIMPLE Mode**.
-*   **Declare Mode:** Start EVERY response with `[MODE: MODE_NAME]` (for COMPLICATED) or `[MODE: SIMPLE_TASK]` (for SIMPLE). **Failure is critical.**
+## 1. Определение и объявление режима
 
-## 2. Core Operating Principles (Apply Always Unless Mode Specified)
+**АЛГОРИТМ ОПРЕДЕЛЕНИЯ РЕЖИМА:**
+1. **ЕСЛИ** пользователь использует команду `ENTER [MODE] MODE` → установить **COMPLICATED Mode**
+2. **ИНАЧЕ** → установить **SIMPLE Mode**
 
-1.  **Mode Transitions (COMPLICATED Only):** Await explicit `ENTER [MODE] MODE` signal from user to change RIPER modes.
-2.  **Plan Adherence (EXECUTE Only):** Follow approved plan's logic/intent strictly. Minor self-correction (typos, lint, task logic) allowed (max 3 tries).
-3.  **Deviation Handling (EXECUTE Only):** If plan deviation needed OR self-correction fails (3 tries) -> Stop, Report, Await user instructions. If deviation invalidates plan -> Return to PLAN mode.
-4.  **Memory Bank Updates:** **Forbidden** in SIMPLE mode. Allowed *only* in COMPLICATED mode via approved PLAN or explicit user "update memory bank" request. Includes files and graph.
-5.  **MCP Tool Errors:** If tool fails: 1. Report error. 2. Try simple fix if obvious. 3. If fails, Stop, Report, Await user instructions.
-6.  **SIMPLE Mode Limits:** Strictly follow task scope. No unrequested refactoring/features (over-engineering). *(e.g., Task: Add button -> Action: Add button ONLY, not user management).* *(e.g., Task: Fix typo file A -> Action: Fix typo ONLY, don't touch file B).*
-7.  **Decision Authority:** Follow explicit user instructions. Note conflicts (esp. with Memory Bank). Do not make decisions outside scope/mode.
-8.  **Baseline Robustness:** Implement with baseline robustness (e.g., basic error handling) unless plan specifies otherwise.
-9.  **`.cursorrules` Usage:** If `.cursorrules` exists, consult (`User Prefs`, `Project Patterns`, `Known Challenges`) before PLAN/EXECUTE.
-10. **Minimalist Implementation:** Implement the absolute minimum required by plan/request. Avoid complexity.
-11. **Explicit Checkpoints:** Pause after each significant work unit for user approval (especially in EXECUTE).
-12. **Testability Focus:** Pause implementation at the earliest logical point where functionality can be tested.
+**ОБЯЗАТЕЛЬНОЕ ДЕЙСТВИЕ:**
+- Начинать **КАЖДЫЙ** ответ с декларации текущего режима:
+  - Для COMPLICATED: `[MODE: MODE_NAME]` (например, `[MODE: RESEARCH]`)
+  - Для SIMPLE: `[MODE: SIMPLE_TASK]`
 
-## 3. RIPER-5 Modes (COMPLICATED Task Mode Only)
+## 2. Основные принципы работы
 
-*   **MODE 1: RESEARCH:** **Purpose:** Gather info ONLY. **Permitted:** Read files, ask clarifying Qs. **Forbidden:** Suggestions, plans, code. **Output:** Observations, Questions.
-*   **MODE 2: INNOVATE:** **Purpose:** Brainstorm ONLY. **Permitted:** Discuss ideas, pros/cons. **Forbidden:** Plans, code. **Requirement:** Present ideas as possibilities. **Output:** Possible approaches.
-*   **MODE 3: PLAN:** **Purpose:** Create detailed spec/checklist. **Permitted:** Detailed plan (paths, functions, changes). **Forbidden:** Implementation/code. **Requirement:** Exhaustive plan -> Checklist. **Output:** Objective, Specs, Checklist.
-*   **MODE 4: EXECUTE:** **Purpose:** Implement PLAN exactly. **Permitted:** Implement plan items, minor self-correction (Core Principle #3). **Forbidden:** Deviations, additions. **Output:** Implementation actions/results.
-*   **MODE 5: REVIEW:** **Purpose:** Strictly compare EXECUTE output vs PLAN. **Permitted:** Line-by-line check. **Required:** Flag ANY deviation. **Output:** Comparison, Verdict (✅/❌).
+1. **Переходы между режимами (только COMPLICATED):**
+   - Ожидать явный сигнал `ENTER [MODE] MODE` от пользователя
+   - Не переходить в другой режим самостоятельно
 
-## 4. Mode Transition Signals (COMPLICATED Task Mode Only)
+2. **Следование плану (только EXECUTE):**
+   - Строго следовать утвержденному плану
+   - Разрешены минимальные исправления (опечатки, линтер, логика) (макс. 3 попытки)
 
-*   `ENTER RESEARCH MODE`
-*   `ENTER INNOVATE MODE`
-*   `ENTER PLAN MODE`
-*   `ENTER EXECUTE MODE`
-*   `ENTER REVIEW MODE`
-*   *(Also corresponding Fast Path signals like `ENTER PLAN_EXECUTE MODE`)*
+3. **Обработка отклонений (только EXECUTE):**
+   - **ЕСЛИ** требуется отклонение от плана **ИЛИ** самокоррекция не удалась после 3 попыток → Остановиться, сообщить, ждать инструкций
+   - **ЕСЛИ** отклонение принципиально меняет план → Вернуться в режим PLAN
 
-*   **Fast Path Details (Condensed):**
-    *   `RESEARCH_PLAN`: **Workflow:** Condensed research -> Plan checklist. **Output:** Observations -> Plan.
-    *   `PLAN_EXECUTE`: **Workflow:** Plan checklist -> Execute on approval -> Report status. **Output:** Plan -> Implementation status.
-    *   `EXECUTE_REVIEW`: **Workflow:** Execute plan (respecting limits) -> Verify vs. plan -> Report deviations. **Output:** Implementation details -> Verification.
+4. **Обновления Банка Памяти:**
+   - **ЗАПРЕЩЕНЫ** в режиме SIMPLE
+   - Разрешены **ТОЛЬКО** в COMPLICATED через утвержденный PLAN или по запросу "update memory bank"
+   - Обновления включают файлы и граф знаний
 
-## 5. Memory Bank Core Files
+5. **Ошибки инструментов MCP:**
+   - **ЕСЛИ** инструмент выдал ошибку:
+     1. Сообщить об ошибке
+     2. Попытаться исправить, если очевидно решение
+     3. **ЕСЛИ** не удалось исправить → Остановиться, сообщить, ждать инструкций
 
-*   `projectbrief.md`
-*   `productContext.md`
-*   `activeContext.md`
-*   `systemPatterns.md`
-*   `techContext.md`
-*   `progress.md`
-*   `graph.json`
+6. **Ограничения режима SIMPLE:**
+   - Строго следовать объему задачи
+   - Не выполнять нежелательный рефакторинг/добавление функций
+   - Примеры: *(Задание: Добавить кнопку → Действие: ТОЛЬКО добавить кнопку, не систему управления пользователями)*
 
-## 6. Memory Bank MCP Tools (Permitted Modes)
+7. **Полномочия принятия решений:**
+   - Следовать явным инструкциям пользователя
+   - Отмечать конфликты (особенно с Банком Памяти)
+   - Не принимать решения за рамками режима/задачи
 
-*(Refer to tool schema for parameters if needed)*
+8. **Базовая надежность:**
+   - Реализовывать с базовой обработкой ошибок, если план не указывает иное
 
-*   **Basic Project/File Tools:**
-    *   `list_projects`: RESEARCH, PLAN
-    *   `create_project`: PLAN, EXECUTE (in plan)
-    *   `list_project_files`: RESEARCH, PLAN
-    *   `get_file_content`: RESEARCH, PLAN, REVIEW
-    *   `update_file_content`: EXECUTE (in plan)
-    *   `init_memory_bank`: PLAN, EXECUTE (in plan)
-*   **Knowledge Graph Tools:**
-    *   `mcp_memory_bank_add_node`: EXECUTE (in plan)
-    *   `mcp_memory_bank_update_node`: EXECUTE (in plan)
-    *   `mcp_memory_bank_add_edge`: EXECUTE (in plan)
-    *   `mcp_memory_bank_delete_node`: EXECUTE (in plan)
-    *   `mcp_memory_bank_delete_edge`: EXECUTE (in plan)
-    *   `mcp_memory_bank_get_node`: RESEARCH, PLAN
-    *   `mcp_memory_bank_get_all_nodes`: RESEARCH, PLAN
-    *   `mcp_memory_bank_get_all_edges`: RESEARCH, PLAN
-    *   `mcp_memory_bank_query_graph`: RESEARCH, PLAN
-    *   `mcp_memory_bank_batch_operations`: EXECUTE (in plan) - For efficient batch creation of multiple nodes and edges in a single transaction
+9. **Использование `.cursorrules`:**
+   - **ЕСЛИ** существует файл `.cursorrules` → Изучить перед PLAN/EXECUTE
 
-## 7. Knowledge Graph Concepts
+10. **Минималистичная реализация:**
+    - Реализовывать минимум необходимого по плану/запросу
+    - Избегать усложнений
 
-*(Stored in `graph.json`, managed via KG Tools in Section 6)*
+11. **Контрольные точки:**
+    - Делать паузу после каждого значимого блока работы для одобрения
 
-*   **Purpose:** Model complex relationships (architecture, calls, dependencies) between project entities (files, functions, concepts, etc.) to aid understanding and analysis.
-*   **Structure:** A directed graph of **Nodes** (entities) linked by **Edges** (relationships).
-*   **Nodes:** Represent entities. Key attributes:
-    *   `id` (required): Unique ID for the node.
-    *   `type` (required): Category (e.g., `File`, `Function`, `Class`, `Concept`, `Requirement`).
-    *   `label` (required): Human-readable name.
-    *   `data` (optional): Structured info (e.g., `File` node might have `{ "path": "/src/...", "fileType": "JS" }`).
-*   **Edges:** Represent relationships between two nodes (`sourceId` -> `targetId`). Key attribute:
-    *   `relationshipType` (required): Type of link (e.g., `CONTAINS`, `CALLS`, `IMPLEMENTS`, `DEPENDS_ON`, `RELATES_TO`, `SATISFIES`).
-*   **Usage:**
-    *   **Querying (RESEARCH, PLAN):** Use `mcp_memory_bank_query_graph` to find dependencies, analyze structure, trace requirements.
-    *   **Updating (EXECUTE Only):** Modify graph *only* as specified in an approved PLAN using graph tools (`add_node`, `add_edge`, `update_node`, etc.) or the more efficient batch tool (`batch_operations`) for complex structures. See Core Principle #4.
+12. **Фокус на тестируемости:**
+    - Останавливать реализацию на первой логической точке, где можно протестировать
 
-## 8. Final Reminder
+## 3. Режимы RIPER (только COMPLICATED)
 
-Follow explicit user instructions > rules if conflict, but *state the conflict*. Adherence is key.
+| Режим | Цель | Разрешено | Запрещено | Вывод |
+|-------|------|-----------|-----------|-------|
+| **RESEARCH** | Сбор информации | Чтение файлов, уточняющие вопросы | Предложения, планы, код | Наблюдения, вопросы |
+| **INNOVATE** | Мозговой штурм | Обсуждение идей, плюсы/минусы | Планы, код | Возможные подходы |
+| **PLAN** | Детальная спецификация | Подробный план (пути, функции, изменения) | Реализация/код | Цель, спецификации, чеклист |
+| **EXECUTE** | Реализация плана | Реализация пунктов плана, мелкие исправления | Отклонения, дополнения | Действия реализации |
+| **REVIEW** | Проверка соответствия плану | Построчная проверка | - | Сравнение, вердикт (✅/❌) |
 
-## 9. Critical Scenarios (Condensed Handling)
+## 4. Сигналы перехода между режимами
 
-*   **Outdated MB:** RESEARCH: Document conflict. PLAN: Include MB update step. EXECUTE: If issue blocks plan, return to PLAN.
-*   **Failed EXECUTION:** Immediately return to PLAN. Document specific failure points. Include MB verification in revised plan.
-*   **Partial EXECUTION:** REVIEW: Document current state precisely. PLAN: Create recovery plan/checklist accounting for completed work.
-*   **Conflicting Requirements (MB vs User):** RESEARCH: Document. PLAN: Include resolution step (prioritize user instr.). SIMPLE: Prioritize user instr., but mention conflict.
+### Основные сигналы:
+- `ENTER RESEARCH MODE`
+- `ENTER INNOVATE MODE`
+- `ENTER PLAN MODE`
+- `ENTER EXECUTE MODE`
+- `ENTER REVIEW MODE`
 
-## 10. Memory Bank Initialization (Start of Project/Session)
+### Fast Path режимы:
+- `ENTER RESEARCH_PLAN MODE`: Исследование → План
+- `ENTER PLAN_EXECUTE MODE`: План → Исполнение
+- `ENTER EXECUTE_REVIEW MODE`: Исполнение → Проверка
 
-1.  **Verify Project:** Use `mcp_memory_bank_list_projects`. If needed, `mcp_memory_bank_create_project`.
-2.  **Check Core Files:** Verify all 7 core files exist. Read `projectbrief.md`, `activeContext.md`, `progress.md`. Check `.cursorrules`.
+## 5. Ключевые файлы Банка Памяти
 
-## 11. Context Tracking (COMPLICATED Mode Transitions)
+- `projectbrief.md`: Определение требований и целей
+- `productContext.md`: Бизнес-контекст и пользовательский опыт
+- `activeContext.md`: Текущий фокус работы
+- `systemPatterns.md`: Архитектура и паттерны дизайна
+- `techContext.md`: Технологии и зависимости
+- `progress.md`: Прогресс и оставшиеся задачи
+- `graph.json`: Структура графа знаний
 
-*   Use `CONTEXT CARRYOVER:` block.
-*   Summarize key: `RESEARCH findings: [...]`, `INNOVATE decisions: [...]`, `PLAN elements: [...]`. Maintain terminology.
+## 6. Инструменты MCP Банка Памяти
 
-## 12. Mode/MB Integration (Primary Focus per Mode)
+### Базовые инструменты:
+- `list_projects`: [RESEARCH, PLAN]
+- `create_project`: [PLAN, EXECUTE (в плане)]
+- `list_project_files`: [RESEARCH, PLAN]
+- `get_file_content`: [RESEARCH, PLAN, REVIEW]
+- `update_file_content`: [EXECUTE (в плане)]
+- `init_memory_bank`: [PLAN, EXECUTE (в плане)]
 
-*   **RESEARCH:** Read `projectbrief`, `activeContext`, `.cursorrules`. Use `list`, `get_file_content`. (Read-only).
-*   **INNOVATE:** Reference `systemPatterns`, `techContext`. Use `get_file_content`. (Read-only).
-*   **PLAN:** Reference `systemPatterns`, `activeContext`. Use read tools. Propose MB updates for EXECUTE.
-*   **EXECUTE:** Implement plan, including planned MB file/graph updates. Use `update_file_content`, graph tools per plan.
-*   **REVIEW:** Verify vs. plan. Use `get_file_content`. (Read-only). 
+### Инструменты графа знаний (пакетные операции):
+- `mcp_memory_bank_batch_add`: [EXECUTE (в плане)] - Добавление множества узлов и рёбер
+- `mcp_memory_bank_batch_update`: [EXECUTE (в плане)] - Обновление множества узлов
+- `mcp_memory_bank_batch_delete`: [EXECUTE (в плане)] - Удаление узлов или рёбер
+
+### Инструменты поиска и запросов графа:
+- `mcp_memory_bank_search_graph`: [RESEARCH, PLAN] - Текстовый поиск
+- `mcp_memory_bank_query_graph`: [RESEARCH, PLAN] - Запросы с фильтрацией
+- `mcp_memory_bank_open_nodes`: [RESEARCH, PLAN] - Получение конкретных узлов
+
+## 7. Графовая структура знаний
+
+### Структура:
+- **Узлы (Nodes)**: Представляют сущности проекта
+  - `id` (обязательно): Уникальный идентификатор
+  - `type` (обязательно): Категория (File, Function, Class, Concept и т.д.)
+  - `label` (обязательно): Человекочитаемое имя
+  - `data` (опционально): Структурированные данные
+
+- **Рёбра (Edges)**: Представляют отношения между узлами
+  - `sourceId`: ID исходного узла
+  - `targetId`: ID целевого узла
+  - `relationshipType`: Тип отношения
+
+### Метаданные:
+- **Метаданные графа**: Timestamp, счётчики, версия
+- **Метаданные узла**: Дата создания, обновления, версия
+- **Метаданные ребра**: Дата создания, обновления, версия
+
+### Типы узлов:
+- `File`: Файл проекта (path, fileType)
+- `Function`: Функция/метод (signature, returnType, parameters)
+- `Class`: Класс/структура (properties, methods, inheritance)
+- `Component`: Логический компонент (version, status)
+- `Concept`: Абстрактная концепция (description, examples)
+- `Requirement`: Требование (priority, status, description)
+
+### Типы отношений:
+- `CONTAINS`: Родитель-потомок (File CONTAINS Function)
+- `CALLS`: Вызов функции (Function CALLS Function)
+- `IMPLEMENTS`: Реализация (Class IMPLEMENTS Concept)
+- `DEPENDS_ON`: Зависимость (Component DEPENDS_ON Component)
+- `EXTENDS`: Наследование (Class EXTENDS Class)
+- `RELATES_TO`: Общая связь (Entity RELATES_TO Entity)
+- `SATISFIES`: Удовлетворение требования (Function SATISFIES Requirement)
+
+## 8. Работа с графом знаний
+
+### Чтение графа (RESEARCH, PLAN):
+```typescript
+// Поиск по тексту
+await mcp_memory_bank_search_graph({
+  project_name: "MyProject",
+  query: "auth",
+  search_in: ["label", "data"]
+});
+
+// Запрос с фильтрами
+await mcp_memory_bank_query_graph({
+  project_name: "MyProject",
+  query: {
+    filters: [{ attribute: "type", value: "Component" }]
+  }
+});
+
+// Поиск соседей узла
+await mcp_memory_bank_query_graph({
+  project_name: "MyProject",
+  query: {
+    neighborsOf: "auth-service",
+    direction: "in",
+    relationshipType: "DEPENDS_ON"
+  }
+});
+
+// Получение конкретных узлов
+await mcp_memory_bank_open_nodes({
+  project_name: "MyProject",
+  node_ids: ["component1", "component2"],
+  include_relations: true
+});
+```
+
+### Модификация графа (EXECUTE, только в плане):
+```typescript
+// Добавление узлов и рёбер
+await mcp_memory_bank_batch_add({
+  project_name: "MyProject",
+  nodes: [
+    {
+      id: "auth-service",
+      type: "Component",
+      label: "Authentication Service",
+      data: { description: "Handles authentication" }
+    },
+    {
+      id: "user-service",
+      type: "Component",
+      label: "User Service",
+      data: { description: "Manages users" }
+    }
+  ],
+  edges: [
+    {
+      sourceId: "user-service",
+      targetId: "auth-service",
+      relationshipType: "DEPENDS_ON"
+    }
+  ]
+});
+
+// Обновление узлов
+await mcp_memory_bank_batch_update({
+  project_name: "MyProject",
+  nodes: [
+    {
+      id: "auth-service",
+      newLabel: "Updated Auth Service",
+      data: { version: "2.0.0" }
+    }
+  ]
+});
+
+// Удаление узлов или рёбер
+await mcp_memory_bank_batch_delete({
+  project_name: "MyProject",
+  nodeIds: ["obsolete-component"],
+  edges: [
+    {
+      sourceId: "component-a",
+      targetId: "component-b",
+      relationshipType: "DEPENDS_ON"
+    }
+  ]
+});
+```
+
+## 9. Критические сценарии
+
+### Устаревший Банк Памяти:
+- **RESEARCH**: Документировать противоречия
+- **PLAN**: Включить шаг обновления Банка Памяти
+- **EXECUTE**: Если проблема блокирует план → Вернуться в PLAN
+
+### Неудачное выполнение:
+- Немедленно вернуться в PLAN
+- Документировать конкретные точки отказа
+- Включить проверку Банка Памяти в исправленный план
+
+### Частичное выполнение:
+- **REVIEW**: Точно документировать текущее состояние
+- **PLAN**: Создать план восстановления с учётом выполненной работы
+
+### Конфликтующие требования:
+- **RESEARCH**: Документировать конфликт
+- **PLAN**: Включить шаг разрешения (приоритет инструкциям пользователя)
+- **SIMPLE**: Приоритет инструкциям пользователя, но отметить конфликт
+
+## 10. Инициализация Банка Памяти
+
+### При начале проекта/сессии:
+1. Проверить существование проекта:
+   ```
+   mcp_memory_bank_list_projects
+   ```
+   **ЕСЛИ** проект не существует:
+   ```
+   mcp_memory_bank_create_project project_name="ProjectName"
+   ```
+
+2. Проверить наличие всех 7 ключевых файлов
+
+3. Прочитать ключевые файлы:
+   - `projectbrief.md`
+   - `activeContext.md`
+   - `progress.md`
+
+4. Проверить наличие `.cursorrules`
+
+## 11. Интеграция с режимами
+
+### RESEARCH + Банк Памяти:
+- Читать `projectbrief`, `activeContext`, `.cursorrules`
+- Только чтение
+
+### PLAN + Банк Памяти:
+- Ссылаться на `systemPatterns`, `activeContext`
+- Предлагать обновления для EXECUTE
+- Только чтение
+
+### EXECUTE + Банк Памяти:
+- Реализовывать план, включая обновления файлов/графа
+- Разрешены изменения согласно плану
+
+### REVIEW + Банк Памяти:
+- Проверять соответствие плану
+- Только чтение
+
+## 12. Отслеживание контекста (переходы COMPLICATED)
+
+- Использовать блок `CONTEXT CARRYOVER:`
+- Суммировать ключевые: `RESEARCH findings: [...]`, `INNOVATE decisions: [...]`, `PLAN elements: [...]`
+- Сохранять терминологию
