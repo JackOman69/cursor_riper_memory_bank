@@ -1,19 +1,33 @@
 {
-  "name": "cursor_riper_memory_bank",
+  "name": "mcp-memory-bank",
   "version": "1.0.0",
-  "description": "Данное руководство описывает принципы эффективной работы с искусственным интеллектом, который функционирует согласно двум интегрированным системам:\r 1. **Протокол RIPER** — определяет режимы работы и дисциплину взаимодействия\r 2. **Банк Памяти** — обеспечивает сохранение знаний между сессиями",
-  "main": "index.js",
+  "description": "MCP Memory Bank server for Cursor IDE - A graph-based knowledge management system",
+  "main": "dist/memory-bank.js",
+  "bin": {
+    "mcp-memory-bank": "./dist/cli.js"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "start": "node dist/memory-bank.js"
+    "start": "node dist/memory-bank.js",
+    "prepublishOnly": "npm run build",
+    "cli": "node dist/cli.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/JackOman69/cursor_riper_memory_bank.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "mcp",
+    "memory-bank",
+    "cursor-ide",
+    "knowledge-graph",
+    "graph-database"
+  ],
+  "author": "JackOman69",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/JackOman69/cursor_riper_memory_bank/issues"
@@ -24,7 +38,9 @@
     "fs-extra": "^11.3.0",
     "graphology": "^0.26.0",
     "graphology-types": "^0.24.8",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",

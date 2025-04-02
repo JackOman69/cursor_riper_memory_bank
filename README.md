@@ -46,15 +46,14 @@
      {
        "mcpServers": {
           "memory-bank": {
-            "command": "npm",
+            "command": "node",
             "args": [
-              "E:/cursor_riper_memory_bank/memory-bank.js" // !!! ЗАМЕНИТЕ НА ПОЛНЫЙ ПУТЬ К ВАШЕМУ ПРОЕКТУ !!!
+              "cursor_riper_memory_bank/memory-bank-mcp/dist/memory-bank.js" // !!! ЗАМЕНИТЕ НА ПОЛНЫЙ ПУТЬ К ВАШЕМУ ПРОЕКТУ !!!
             ]
          }
        }
      }
      ```
-   - **Обязательно замените** значение `"cwd"` на **абсолютный путь** к корневой папке вашего проекта (где находится `package.json`).
    - Сохраните файл `mcp_servers.json`.
 
 **6. Запуск и проверка:**

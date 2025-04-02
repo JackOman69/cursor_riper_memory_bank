@@ -1,59 +1,21 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
-const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
-const zod_1 = require("zod");
-const fs_extra_1 = __importDefault(require("fs-extra"));
-const path = __importStar(require("path"));
-const graphology_1 = __importDefault(require("graphology"));
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import fs from "fs-extra";
+import * as path from "path";
+import Graph from 'graphology';
 // Определяем базовый путь для хранения данных
 const MEMORY_BASE_PATH = process.env.MEMORY_BASE_PATH || "E:/memory-bank-cursor";
 // Убедимся, что директория существует
 try {
-    fs_extra_1.default.ensureDirSync(MEMORY_BASE_PATH);
+    fs.ensureDirSync(MEMORY_BASE_PATH);
     console.error(`Memory bank base directory initialized at: ${MEMORY_BASE_PATH}`);
 }
 catch (error) {
     console.error(`Failed to create memory bank directory: ${error instanceof Error ? error.message : String(error)}`);
 }
 // Создаем экземпляр MCP сервера
-const server = new mcp_js_1.McpServer({
+const server = new McpServer({
     name: "Memory Bank",
     version: "2.2.0",
 });
@@ -61,7 +23,7 @@ const server = new mcp_js_1.McpServer({
 // Регистрируем инструмент для получения списка проектов
 server.tool("list_projects", "Lists all projects in the memory bank", {}, async () => {
     try {
-        if (!fs_extra_1.default.existsSync(MEMORY_BASE_PATH)) {
+        if (!fs.existsSync(MEMORY_BASE_PATH)) {
             return {
                 content: [
                     {
@@ -71,10 +33,10 @@ server.tool("list_projects", "Lists all projects in the memory bank", {}, async 
                 ],
             };
         }
-        const projects = fs_extra_1.default.readdirSync(MEMORY_BASE_PATH)
+        const projects = fs.readdirSync(MEMORY_BASE_PATH)
             .filter(item => {
             const itemPath = path.join(MEMORY_BASE_PATH, item);
-            return fs_extra_1.default.existsSync(itemPath) && fs_extra_1.default.statSync(itemPath).isDirectory();
+            return fs.existsSync(itemPath) && fs.statSync(itemPath).isDirectory();
         });
         return {
             content: [
@@ -101,7 +63,7 @@ server.tool("list_projects", "Lists all projects in the memory bank", {}, async 
 });
 // Регистрируем инструмент для создания нового проекта
 server.tool("create_project", "Creates a new project in the memory bank", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project to create"),
+    project_name: z.string().min(1).describe("Name of the project to create"),
 }, async ({ project_name }) => {
     try {
         if (!project_name || project_name.trim() === "") {
@@ -121,7 +83,7 @@ server.tool("create_project", "Creates a new project in the memory bank", {
         }
         const projectPath = path.join(MEMORY_BASE_PATH, sanitizedProjectName);
         // Проверяем, существует ли проект
-        if (fs_extra_1.default.existsSync(projectPath)) {
+        if (fs.existsSync(projectPath)) {
             return {
                 content: [
                     {
@@ -132,7 +94,7 @@ server.tool("create_project", "Creates a new project in the memory bank", {
             };
         }
         // Создаем директорию проекта
-        fs_extra_1.default.ensureDirSync(projectPath);
+        fs.ensureDirSync(projectPath);
         // Создаем базовые файлы
         const baseFiles = [
             "projectbrief.md",
@@ -153,10 +115,10 @@ server.tool("create_project", "Creates a new project in the memory bank", {
             else {
                 content = `# ${file}\n\n`;
             }
-            fs_extra_1.default.writeFileSync(filePath, content, 'utf-8');
+            fs.writeFileSync(filePath, content, 'utf-8');
         }
         // Create an empty graph file
-        const graph = new graphology_1.default({ multi: true, allowSelfLoops: true, type: 'directed' });
+        const graph = new Graph({ multi: true, allowSelfLoops: true, type: 'directed' });
         saveGraph(sanitizedProjectName, graph); // Save the initial empty graph
         return {
             content: [
@@ -181,7 +143,7 @@ server.tool("create_project", "Creates a new project in the memory bank", {
 });
 // Регистрируем инструмент для получения списка файлов проекта
 server.tool("list_project_files", "Lists all files in a project", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
+    project_name: z.string().min(1).describe("Name of the project"),
 }, async ({ project_name }) => {
     try {
         if (!project_name || project_name.trim() === "") {
@@ -198,7 +160,7 @@ server.tool("list_project_files", "Lists all files in a project", {
         const sanitizedProjectName = project_name.replace(/[<>:"/\|?*]/g, "_");
         const projectPath = path.join(MEMORY_BASE_PATH, sanitizedProjectName);
         // Проверяем, существует ли проект и является ли он директорией
-        if (!fs_extra_1.default.existsSync(projectPath)) {
+        if (!fs.existsSync(projectPath)) {
             return {
                 content: [
                     {
@@ -208,7 +170,7 @@ server.tool("list_project_files", "Lists all files in a project", {
                 ],
             };
         }
-        if (!fs_extra_1.default.statSync(projectPath).isDirectory()) {
+        if (!fs.statSync(projectPath).isDirectory()) {
             return {
                 content: [
                     {
@@ -219,11 +181,11 @@ server.tool("list_project_files", "Lists all files in a project", {
             };
         }
         // Получаем список файлов и директорий на верхнем уровне
-        const items = fs_extra_1.default.readdirSync(projectPath);
+        const items = fs.readdirSync(projectPath);
         const filesAndDirs = items.map(item => {
             const itemPath = path.join(projectPath, item); // Use path.join for cross-platform compatibility
             try {
-                const stat = fs_extra_1.default.statSync(itemPath);
+                const stat = fs.statSync(itemPath);
                 // Show graph.json specifically if needed, otherwise just list files/dirs
                 return stat.isDirectory() ? `- ${item}/ (Directory)` : `- ${item}`;
             }
@@ -258,8 +220,8 @@ ${filesAndDirs.length > 0
 });
 // Регистрируем инструмент для получения содержимого файла
 server.tool("get_file_content", "Gets the content of a file in a project", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    file_path: zod_1.z.string().min(1).describe("Path to the file within the project"),
+    project_name: z.string().min(1).describe("Name of the project"),
+    file_path: z.string().min(1).describe("Path to the file within the project"),
 }, async ({ project_name, file_path }) => {
     try {
         if (!project_name || project_name.trim() === "") {
@@ -298,7 +260,7 @@ server.tool("get_file_content", "Gets the content of a file in a project", {
             };
         }
         // Проверяем, существует ли проект
-        if (!fs_extra_1.default.existsSync(projectPath)) {
+        if (!fs.existsSync(projectPath)) {
             return {
                 content: [
                     {
@@ -309,7 +271,7 @@ server.tool("get_file_content", "Gets the content of a file in a project", {
             };
         }
         // Проверяем, существует ли файл
-        if (!fs_extra_1.default.existsSync(filePath) || !fs_extra_1.default.statSync(filePath).isFile()) {
+        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
             return {
                 content: [
                     {
@@ -320,7 +282,7 @@ server.tool("get_file_content", "Gets the content of a file in a project", {
             };
         }
         // Читаем содержимое файла
-        const content = fs_extra_1.default.readFileSync(filePath, 'utf-8');
+        const content = fs.readFileSync(filePath, 'utf-8');
         return {
             content: [
                 {
@@ -344,9 +306,9 @@ server.tool("get_file_content", "Gets the content of a file in a project", {
 });
 // Регистрируем инструмент для обновления содержимого файла
 server.tool("update_file_content", "Updates the content of a file in a project", {
-    project_name: zod_1.z.string().min(1).describe("Name of the project"),
-    file_path: zod_1.z.string().min(1).describe("Path to the file within the project"),
-    content: zod_1.z.string().describe("New content of the file"),
+    project_name: z.string().min(1).describe("Name of the project"),
+    file_path: z.string().min(1).describe("Path to the file within the project"),
+    content: z.string().describe("New content of the file"),
 }, async ({ project_name, file_path, content }) => {
     try {
         if (!project_name || project_name.trim() === "") {
@@ -385,7 +347,7 @@ server.tool("update_file_content", "Updates the content of a file in a project",
             };
         }
         // Проверяем, существует ли проект
-        if (!fs_extra_1.default.existsSync(projectPath)) {
+        if (!fs.existsSync(projectPath)) {
             return {
                 content: [
                     {
@@ -397,7 +359,7 @@ server.tool("update_file_content", "Updates the content of a file in a project",
         }
         // Создаем директории, если они не существуют
         try {
-            fs_extra_1.default.ensureDirSync(path.dirname(filePath));
+            fs.ensureDirSync(path.dirname(filePath));
         }
         catch (err) {
             return {
@@ -411,7 +373,7 @@ server.tool("update_file_content", "Updates the content of a file in a project",
         }
         // Записываем содержимое файла
         try {
-            fs_extra_1.default.writeFileSync(filePath, content, 'utf-8');
+            fs.writeFileSync(filePath, content, 'utf-8');
         }
         catch (err) {
             return {
@@ -448,7 +410,7 @@ server.tool("update_file_content", "Updates the content of a file in a project",
 server.tool("init_memory_bank", "Initializes the memory bank directory structure", {}, async () => {
     try {
         // Создаем базовую директорию, если она не существует
-        if (fs_extra_1.default.existsSync(MEMORY_BASE_PATH)) {
+        if (fs.existsSync(MEMORY_BASE_PATH)) {
             return {
                 content: [
                     {
@@ -459,7 +421,7 @@ server.tool("init_memory_bank", "Initializes the memory bank directory structure
             };
         }
         try {
-            fs_extra_1.default.ensureDirSync(MEMORY_BASE_PATH);
+            fs.ensureDirSync(MEMORY_BASE_PATH);
         }
         catch (err) {
             return {
@@ -540,28 +502,28 @@ const getGraphPath = (projectName) => {
 // Function to load a graph for a project
 const loadGraph = (projectName) => {
     const graphPath = getGraphPath(projectName);
-    if (fs_extra_1.default.existsSync(graphPath)) {
+    if (fs.existsSync(graphPath)) {
         try {
-            const data = fs_extra_1.default.readJsonSync(graphPath);
+            const data = fs.readJsonSync(graphPath);
             // Ensure the graph is created with correct options even when loaded
-            const graph = new graphology_1.default({ multi: true, allowSelfLoops: true, type: 'directed' });
+            const graph = new Graph({ multi: true, allowSelfLoops: true, type: 'directed' });
             graph.import(data);
             return graph;
         }
         catch (error) {
             console.error(`Error loading or parsing graph for ${projectName} from ${graphPath}:`, error);
             // Return a new graph if loading fails
-            return new graphology_1.default({ multi: true, allowSelfLoops: true, type: 'directed' });
+            return new Graph({ multi: true, allowSelfLoops: true, type: 'directed' });
         }
     }
     // Return a new graph if the file doesn't exist
-    return new graphology_1.default({ multi: true, allowSelfLoops: true, type: 'directed' });
+    return new Graph({ multi: true, allowSelfLoops: true, type: 'directed' });
 };
 // Function to save a graph for a project
 const saveGraph = (projectName, graph) => {
     const graphPath = getGraphPath(projectName);
     try {
-        fs_extra_1.default.ensureDirSync(path.dirname(graphPath));
+        fs.ensureDirSync(path.dirname(graphPath));
         // Экспортируем граф в объект
         const exportedGraph = graph.export();
         // Сортируем узлы алфавитно по ключу
@@ -576,7 +538,7 @@ const saveGraph = (projectName, graph) => {
             version: exportedGraph.metadata ? (exportedGraph.metadata.version || 0) + 1 : 1
         };
         // Сохраняем отсортированный граф с улучшенными метаданными
-        fs_extra_1.default.writeJsonSync(graphPath, exportedGraph, { spaces: 2 });
+        fs.writeJsonSync(graphPath, exportedGraph, { spaces: 2 });
     }
     catch (error) {
         console.error(`Error saving graph for ${projectName} to ${graphPath}:`, error);
@@ -586,59 +548,59 @@ const saveGraph = (projectName, graph) => {
 // --- End Graph Helper Functions ---
 // --- Graph Tools Implementation and Registration ---
 // Define Zod schemas for batch operations
-const BatchNodeAddSchema = zod_1.z.object({
-    id: zod_1.z.string().min(1).describe("Уникальный ID для узла"),
-    type: zod_1.z.string().min(1).describe("Тип узла (например, Function, File, Concept)"),
-    label: zod_1.z.string().min(1).describe("Человекочитаемая метка узла"),
-    data: zod_1.z.record(zod_1.z.any()).optional().describe("Опциональные структурированные данные узла"),
+const BatchNodeAddSchema = z.object({
+    id: z.string().min(1).describe("Уникальный ID для узла"),
+    type: z.string().min(1).describe("Тип узла (например, Function, File, Concept)"),
+    label: z.string().min(1).describe("Человекочитаемая метка узла"),
+    data: z.record(z.any()).optional().describe("Опциональные структурированные данные узла"),
 });
-const BatchEdgeAddSchema = zod_1.z.object({
-    sourceId: zod_1.z.string().min(1).describe("ID исходного узла"),
-    targetId: zod_1.z.string().min(1).describe("ID целевого узла"),
-    relationshipType: zod_1.z.string().min(1).describe("Тип отношения (например, CALLS, IMPLEMENTS)"),
+const BatchEdgeAddSchema = z.object({
+    sourceId: z.string().min(1).describe("ID исходного узла"),
+    targetId: z.string().min(1).describe("ID целевого узла"),
+    relationshipType: z.string().min(1).describe("Тип отношения (например, CALLS, IMPLEMENTS)"),
 });
-const BatchNodeUpdateSchema = zod_1.z.object({
-    id: zod_1.z.string().min(1).describe("ID узла для обновления"),
-    newLabel: zod_1.z.string().optional().describe("Новая метка для узла"),
-    data: zod_1.z.record(zod_1.z.any()).optional().describe("Данные для объединения с существующими данными узла"),
+const BatchNodeUpdateSchema = z.object({
+    id: z.string().min(1).describe("ID узла для обновления"),
+    newLabel: z.string().optional().describe("Новая метка для узла"),
+    data: z.record(z.any()).optional().describe("Данные для объединения с существующими данными узла"),
 });
-const BatchEdgeDeleteSchema = zod_1.z.object({
-    sourceId: zod_1.z.string().min(1).describe("ID исходного узла"),
-    targetId: zod_1.z.string().min(1).describe("ID целевого узла"),
-    relationshipType: zod_1.z.string().optional().describe("Тип отношения для удаления (если не указан, удаляются все отношения между указанными узлами)"),
+const BatchEdgeDeleteSchema = z.object({
+    sourceId: z.string().min(1).describe("ID исходного узла"),
+    targetId: z.string().min(1).describe("ID целевого узла"),
+    relationshipType: z.string().optional().describe("Тип отношения для удаления (если не указан, удаляются все отношения между указанными узлами)"),
 });
 // Define Zod schemas for search and query operations
-const SearchGraphSchema = zod_1.z.object({
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
-    query: zod_1.z.string().min(1).describe("Строка поиска"),
-    search_in: zod_1.z.array(zod_1.z.enum(["id", "type", "label", "data"])).default(["id", "type", "label"]).describe("Где искать (id, type, label, data)"),
-    case_sensitive: zod_1.z.boolean().default(false).describe("Учитывать регистр"),
-    limit: zod_1.z.number().int().positive().default(10).describe("Максимальное количество результатов")
+const SearchGraphSchema = z.object({
+    project_name: z.string().min(1).describe("Имя проекта"),
+    query: z.string().min(1).describe("Строка поиска"),
+    search_in: z.array(z.enum(["id", "type", "label", "data"])).default(["id", "type", "label"]).describe("Где искать (id, type, label, data)"),
+    case_sensitive: z.boolean().default(false).describe("Учитывать регистр"),
+    limit: z.number().int().positive().default(10).describe("Максимальное количество результатов")
 });
 // Schema for graph queries with filtering
-const QueryObjectSchema = zod_1.z.object({
-    filters: zod_1.z.array(zod_1.z.object({
-        attribute: zod_1.z.enum(["type", "label", "dataKey"]).describe("Атрибут для фильтрации"),
-        value: zod_1.z.string().describe("Значение для сравнения"),
-        dataKey: zod_1.z.string().optional().describe("Ключ в объекте data, если attribute='dataKey'")
+const QueryObjectSchema = z.object({
+    filters: z.array(z.object({
+        attribute: z.enum(["type", "label", "dataKey"]).describe("Атрибут для фильтрации"),
+        value: z.string().describe("Значение для сравнения"),
+        dataKey: z.string().optional().describe("Ключ в объекте data, если attribute='dataKey'")
     })).optional().describe("Фильтры для узлов"),
-    neighborsOf: zod_1.z.string().optional().describe("ID узла для поиска соседей"),
-    relationshipType: zod_1.z.string().optional().describe("Тип отношения для фильтрации соседей"),
-    direction: zod_1.z.enum(["in", "out", "both"]).optional().default("both").describe("Направление для соседей"),
-    limit: zod_1.z.number().int().positive().optional().default(50).describe("Максимальное количество результатов")
+    neighborsOf: z.string().optional().describe("ID узла для поиска соседей"),
+    relationshipType: z.string().optional().describe("Тип отношения для фильтрации соседей"),
+    direction: z.enum(["in", "out", "both"]).optional().default("both").describe("Направление для соседей"),
+    limit: z.number().int().positive().optional().default(50).describe("Максимальное количество результатов")
 });
 // Schema for retrieving specific nodes and their relations
-const OpenNodesSchema = zod_1.z.object({
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
-    node_ids: zod_1.z.array(zod_1.z.string()).min(1).describe("Массив ID узлов"),
-    include_relations: zod_1.z.boolean().default(true).describe("Включать связи между узлами")
+const OpenNodesSchema = z.object({
+    project_name: z.string().min(1).describe("Имя проекта"),
+    node_ids: z.array(z.string()).min(1).describe("Массив ID узлов"),
+    include_relations: z.boolean().default(true).describe("Включать связи между узлами")
 });
 // Batch Add Operation
 server.tool("mcp_memory_bank_batch_add", "Добавляет несколько узлов и рёбер в одной транзакции, сохраняя алфавитный порядок.", {
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
-    nodes: zod_1.z.array(BatchNodeAddSchema).optional().describe("Массив узлов для добавления"),
-    edges: zod_1.z.array(BatchEdgeAddSchema).optional().describe("Массив рёбер для добавления"),
-    silent_mode: zod_1.z.boolean().default(false).describe("Не выдавать ошибки для существующих элементов")
+    project_name: z.string().min(1).describe("Имя проекта"),
+    nodes: z.array(BatchNodeAddSchema).optional().describe("Массив узлов для добавления"),
+    edges: z.array(BatchEdgeAddSchema).optional().describe("Массив рёбер для добавления"),
+    silent_mode: z.boolean().default(false).describe("Не выдавать ошибки для существующих элементов")
 }, async ({ project_name, nodes, edges, silent_mode }) => {
     try {
         // Валидация входных данных
@@ -754,9 +716,9 @@ server.tool("mcp_memory_bank_batch_add", "Добавляет несколько 
 });
 // Batch Update Operation
 server.tool("mcp_memory_bank_batch_update", "Обновляет несколько существующих узлов в одной транзакции", {
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
-    nodes: zod_1.z.array(BatchNodeUpdateSchema).describe("Массив узлов для обновления"),
-    silent_mode: zod_1.z.boolean().default(false).describe("Не выдавать ошибки для отсутствующих элементов")
+    project_name: z.string().min(1).describe("Имя проекта"),
+    nodes: z.array(BatchNodeUpdateSchema).describe("Массив узлов для обновления"),
+    silent_mode: z.boolean().default(false).describe("Не выдавать ошибки для отсутствующих элементов")
 }, async ({ project_name, nodes, silent_mode }) => {
     try {
         // Валидация входных данных
@@ -837,10 +799,10 @@ server.tool("mcp_memory_bank_batch_update", "Обновляет нескольк
 });
 // Batch Delete Operation
 server.tool("mcp_memory_bank_batch_delete", "Удаляет несколько узлов (вместе с их связями) или конкретные рёбра в одной транзакции", {
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
-    nodeIds: zod_1.z.array(zod_1.z.string()).optional().describe("Массив ID узлов для удаления (вместе с их связями)"),
-    edges: zod_1.z.array(BatchEdgeDeleteSchema).optional().describe("Массив конкретных рёбер для удаления"),
-    silent_mode: zod_1.z.boolean().default(true).describe("Не выдавать ошибки для отсутствующих элементов")
+    project_name: z.string().min(1).describe("Имя проекта"),
+    nodeIds: z.array(z.string()).optional().describe("Массив ID узлов для удаления (вместе с их связями)"),
+    edges: z.array(BatchEdgeDeleteSchema).optional().describe("Массив конкретных рёбер для удаления"),
+    silent_mode: z.boolean().default(true).describe("Не выдавать ошибки для отсутствующих элементов")
 }, async ({ project_name, nodeIds, edges, silent_mode }) => {
     try {
         // Валидация входных данных
@@ -964,11 +926,11 @@ server.tool("mcp_memory_bank_batch_delete", "Удаляет несколько �
 });
 // Search Graph Operation
 server.tool("mcp_memory_bank_search_graph", "Поиск в графе знаний по различным параметрам", {
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
-    query: zod_1.z.string().min(1).describe("Строка поиска"),
-    search_in: zod_1.z.array(zod_1.z.enum(["id", "type", "label", "data"])).default(["id", "type", "label"]).describe("Где искать (id, type, label, data)"),
-    case_sensitive: zod_1.z.boolean().default(false).describe("Учитывать регистр"),
-    limit: zod_1.z.number().int().positive().default(10).describe("Максимальное количество результатов")
+    project_name: z.string().min(1).describe("Имя проекта"),
+    query: z.string().min(1).describe("Строка поиска"),
+    search_in: z.array(z.enum(["id", "type", "label", "data"])).default(["id", "type", "label"]).describe("Где искать (id, type, label, data)"),
+    case_sensitive: z.boolean().default(false).describe("Учитывать регистр"),
+    limit: z.number().int().positive().default(10).describe("Максимальное количество результатов")
 }, async ({ project_name, query, search_in, case_sensitive, limit }) => {
     try {
         const graph = loadGraph(project_name);
@@ -1044,7 +1006,7 @@ server.tool("mcp_memory_bank_search_graph", "Поиск в графе знани
 });
 // Query Graph Operation
 server.tool("mcp_memory_bank_query_graph", "Выполнение запросов к графу знаний с фильтрацией", {
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
+    project_name: z.string().min(1).describe("Имя проекта"),
     query: QueryObjectSchema.describe("Объект запроса с фильтрами и параметрами поиска соседей")
 }, async ({ project_name, query }) => {
     try {
@@ -1238,9 +1200,9 @@ server.tool("mcp_memory_bank_query_graph", "Выполнение запросо�
 });
 // Get Specific Nodes Operation
 server.tool("mcp_memory_bank_open_nodes", "Получение конкретных узлов по ID и их взаимосвязей", {
-    project_name: zod_1.z.string().min(1).describe("Имя проекта"),
-    node_ids: zod_1.z.array(zod_1.z.string()).min(1).describe("Массив ID узлов для получения"),
-    include_relations: zod_1.z.boolean().default(true).describe("Включать ли связи между запрошенными узлами")
+    project_name: z.string().min(1).describe("Имя проекта"),
+    node_ids: z.array(z.string()).min(1).describe("Массив ID узлов для получения"),
+    include_relations: z.boolean().default(true).describe("Включать ли связи между запрошенными узлами")
 }, async ({ project_name, node_ids, include_relations }) => {
     try {
         const graph = loadGraph(project_name);
@@ -1294,7 +1256,7 @@ server.tool("mcp_memory_bank_open_nodes", "Получение конкретны
 // Запускаем сервер с использованием stdio транспорта
 async function main() {
     try {
-        const transport = new stdio_js_1.StdioServerTransport();
+        const transport = new StdioServerTransport();
         await server.connect(transport);
         console.error(`Memory Bank MCP Server running on stdio`);
         console.error(`Memory base path: ${MEMORY_BASE_PATH}`);
@@ -1305,3 +1267,4 @@ async function main() {
     }
 }
 main();
+//# sourceMappingURL=memory-bank.js.map
