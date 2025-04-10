@@ -57,3 +57,5 @@ memory-data/
 *.tmp
 *.temp
 .cache/
+
+tests/
